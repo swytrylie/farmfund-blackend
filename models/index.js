@@ -1,0 +1,15 @@
+module.exports = {
+  User: require('./User'),
+  Cooperative: require('./Cooperative'),
+  CooperativeMember: require('./CooperativeMember'),
+  Farm: require('./Farm'),
+  Field: require('./Field'),
+  FarmingCycle: require('./FarmingCycle'),
+  Crop: require('./Crop'),
+  FinancialCategory: require('./FinancialCategory'),
+  FinancialRecord: require('./FinancialRecord'),
+  Budget: require('./Budget'),
+  Loan: require('./Loan'),
+  LoanPayment: require('./LoanPayment'),
+  PaymentTransaction: require('./PaymentTransaction'),
+};
