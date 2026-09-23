@@ -8,6 +8,7 @@ const hpp = require('hpp');
 const compression = require('compression');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
+console.log('access expiry:', process.env.JWT_ACCESS_EXPIRES)
 
 const connectDB = require('./config/db');
 const apiRoutes = require('./routes');
