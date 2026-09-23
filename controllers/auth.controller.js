@@ -14,10 +14,11 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 const REFRESH_COOKIE_NAME = 'refreshToken';
+const isProd = process.env.NODE_ENV === 'production';
 const refreshCookieOptions = {
   httpOnly: true, // JavaScript can never read this cookie — blocks XSS token theft
-  secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-  sameSite: 'strict', // blocks the cookie being sent from other sites (CSRF protection)
+  secure: isProd, // HTTPS only in production
+  sameSite: isProd ? 'none' : 'lax', // 'none' in prod: frontend and backend are on different domains
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matches JWT_REFRESH_EXPIRES default
   path: '/api/auth', // only sent to auth endpoints, not the whole API
 };
@@ -138,7 +139,12 @@ async function logout(req, res) {
       // token already invalid/expired — nothing to revoke, proceed to clear cookie anyway
     }
   }
-  res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+  path: '/api/auth',
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? 'none' : 'lax',
+});
   new ApiResponse(200, null, 'Logged out successfully').send(res);
 }
 

@@ -84,29 +84,32 @@ app.use('/api', apiRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-// ---- Start server ----
-const PORT = process.env.PORT || 5000;
+// ---- Start server (local only) ----
+// On Vercel, api/index.js imports `app` and handles requests itself,
+// so we only listen() when this file is run directly (node server.js).
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
 
-connectDB().then(() => {
-  const server = app.listen(PORT, () =>
-    console.log(`[server] Listening on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
-  );
+  connectDB().then(() => {
+    const server = app.listen(PORT, () =>
+      console.log(`[server] Listening on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
+    );
 
-  // Fail loudly instead of silently on unexpected errors, so problems
-  // surface immediately in logs/monitoring rather than corrupting state.
-  process.on('unhandledRejection', (err) => {
-    console.error('[unhandledRejection]', err);
-    server.close(() => process.exit(1));
+    process.on('unhandledRejection', (err) => {
+      console.error('[unhandledRejection]', err);
+      server.close(() => process.exit(1));
+    });
+
+    process.on('uncaughtException', (err) => {
+      console.error('[uncaughtException]', err);
+      server.close(() => process.exit(1));
+    });
+
+    process.on('SIGTERM', () => {
+      console.log('[server] SIGTERM received, shutting down gracefully');
+      server.close(() => process.exit(0));
+    });
   });
+}
 
-  process.on('uncaughtException', (err) => {
-    console.error('[uncaughtException]', err);
-    server.close(() => process.exit(1));
-  });
-
-  // Graceful shutdown on deploy/restart signals
-  process.on('SIGTERM', () => {
-    console.log('[server] SIGTERM received, shutting down gracefully');
-    server.close(() => process.exit(0));
-  });
-});
+module.exports = app;

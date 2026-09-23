@@ -3,15 +3,17 @@ const dns = require('node:dns/promises');
 
 // Workaround for a known Node.js (v22+) bug on Windows where DNS SRV
 // lookups (used by mongodb+srv:// connection strings) fail with
-// "querySrv ECONNREFUSED" because Node doesn't reliably use the Windows
-// system DNS resolver. Forcing public DNS resolvers fixes it.
-dns.setServers(['1.1.1.1', '8.8.8.8']);
+// "querySrv ECONNREFUSED". Only needed locally, so we skip it on Vercel.
+if (!process.env.VERCEL) {
+  dns.setServers(['1.1.1.1', '8.8.8.8']);
+}
 
 /**
  * Connects to MongoDB Atlas using the MONGODB_URI env var.
- * Example URI format:
- * mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbName>?retryWrites=true&w=majority
+ * Safe to call more than once: it reuses an existing connection.
  */
+let listenerAttached = false;
+
 async function connectDB() {
   const uri = process.env.MONGODB_URI;
 
@@ -19,17 +21,28 @@ async function connectDB() {
     throw new Error('MONGODB_URI is not set in environment variables');
   }
 
+  // 1 = connected, 2 = connecting. Reuse instead of reconnecting.
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
   try {
-    await mongoose.connect(uri);
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
     console.log('[db] Connected to MongoDB Atlas');
   } catch (err) {
     console.error('[db] Connection error:', err.message);
-    process.exit(1);
+    // Throw instead of process.exit(1) so a failed connection returns
+    // an error response on Vercel instead of killing the function.
+    // Locally, the unhandled rejection handler in server.js still exits.
+    throw err;
   }
 
-  mongoose.connection.on('disconnected', () => {
-    console.warn('[db] MongoDB disconnected');
-  });
+  if (!listenerAttached) {
+    mongoose.connection.on('disconnected', () => {
+      console.warn('[db] MongoDB disconnected');
+    });
+    listenerAttached = true;
+  }
 
   return mongoose.connection;
 }
