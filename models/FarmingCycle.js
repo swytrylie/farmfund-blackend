@@ -5,6 +5,12 @@ const mongoose = require('mongoose');
  * ------------
  * Historical/independent record — a field can go through many farming
  * cycles over time, so this is its own collection referencing Field.
+ *
+ * customCropName: optional — only meaningful when `crop` points to the
+ * shared "Other Crop" placeholder. Crop is master data a regular farmer
+ * can't add to directly, so this lets them record what they're ACTUALLY
+ * growing when nothing in the shared list matches, without needing an
+ * admin to add a new Crop entry first.
  */
 const farmingCycleSchema = new mongoose.Schema(
   {
@@ -18,6 +24,7 @@ const farmingCycleSchema = new mongoose.Schema(
       ref: 'Crop',
       required: true,
     },
+    customCropName: { type: String, trim: true, maxlength: 100 },
     startDate: { type: Date, required: true },
     endDate: { type: Date },
     status: {

@@ -6,9 +6,14 @@ const { body, param, query } = require('express-validator');
  * Every rule here mirrors and TIGHTENS the Mongoose schema — validating
  * here means bad requests are rejected with a clear 400 *before* ever
  * reaching the database, rather than relying on Mongoose alone.
+ *
+ * Text is stored exactly as typed (React escapes it when displaying it).
+ * Names and varieties only refuse < and >.
  */
 
 const ALLOWED_CATEGORIES = ['grain', 'vegetable', 'fruit', 'legume', 'root', 'other'];
+
+const noBrackets = (v) => !/[<>]/.test(v || '');
 
 const createCropRules = [
   body('name')
@@ -17,14 +22,16 @@ const createCropRules = [
     .withMessage('name is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('name must be 2-100 characters')
-    .escape(), // neutralizes HTML/script injection if ever rendered
+    .custom(noBrackets)
+    .withMessage('name cannot contain < or >'),
 
   body('variety')
     .optional({ values: 'falsy' })
     .trim()
     .isLength({ max: 100 })
     .withMessage('variety must be at most 100 characters')
-    .escape(),
+    .custom(noBrackets)
+    .withMessage('variety cannot contain < or >'),
 
   body('category')
     .optional({ values: 'falsy' })
@@ -47,13 +54,16 @@ const updateCropRules = [
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage('name must be 2-100 characters')
-    .escape(),
+    .custom(noBrackets)
+    .withMessage('name cannot contain < or >'),
 
   body('variety')
     .optional({ values: 'falsy' })
     .trim()
     .isLength({ max: 100 })
-    .escape(),
+    .withMessage('variety must be at most 100 characters')
+    .custom(noBrackets)
+    .withMessage('variety cannot contain < or >'),
 
   body('category')
     .optional({ values: 'falsy' })
@@ -74,7 +84,10 @@ const cropIdRule = [param('id').isMongoId().withMessage('Invalid crop id')];
 const listCropsRules = [
   query('page').optional().isInt({ min: 1 }).toInt(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-  query('search').optional().trim().isLength({ max: 100 }).escape(),
+  // Search text is only used to look things up; the controller already escapes
+  // it for the regex, and it is never stored, so no HTML-escaping here
+  // (that used to break searches like "Smith & Sons").
+  query('search').optional().trim().isLength({ max: 100 }),
   query('category').optional().trim().isIn(ALLOWED_CATEGORIES),
 ];
 

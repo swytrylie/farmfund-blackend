@@ -21,9 +21,19 @@ async function createFarm(req, res) {
 
   // owner is ALWAYS the logged-in user — never trust a client-supplied
   // owner id, or anyone could create farms "owned by" someone else.
-  const farm = await Farm.create({ owner: req.user._id, name, location, totalAreaHectares });
-
-  new ApiResponse(201, farm, 'Farm created successfully').send(res);
+  try {
+    const farm = await Farm.create({ owner: req.user._id, name, location, totalAreaHectares });
+    new ApiResponse(201, farm, 'Farm created successfully').send(res);
+  } catch (err) {
+    // Farm.owner has a unique index — a second farm for the same user hits
+    // this exact error. Caught here for a message specific to this rule;
+    // the global errorHandler's generic duplicate-key handling is the
+    // fallback for any other unique-index violation.
+    if (err.code === 11000 && err.keyPattern?.owner) {
+      throw ApiError.conflict('You already have a farm registered. Each farmer can only have one farm.');
+    }
+    throw err;
+  }
 }
 
 // GET /api/farms  (regular users see only their own; admins see everyone's)

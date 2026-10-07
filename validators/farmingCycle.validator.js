@@ -5,11 +5,12 @@ const STATUS_VALUES = ['planned', 'planting', 'growing', 'harvested', 'failed'];
 const createFarmingCycleRules = [
   body('field').isMongoId().withMessage('A valid field id is required'),
   body('crop').isMongoId().withMessage('A valid crop id is required'),
+  body('customCropName').optional({ values: 'falsy' }).trim().isLength({ max: 100 }).custom((v) => !/[<>]/.test(v)).withMessage('customCropName cannot contain < or >'),
   body('startDate').isISO8601().withMessage('startDate must be a valid date').toDate(),
   body('endDate').optional({ values: 'falsy' }).isISO8601().withMessage('endDate must be a valid date').toDate(),
   body('status').optional({ values: 'falsy' }).isIn(STATUS_VALUES).withMessage(`status must be one of: ${STATUS_VALUES.join(', ')}`),
   body('expectedYieldKg').optional({ values: 'falsy' }).isFloat({ min: 0 }).toFloat(),
-  body('notes').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).escape(),
+  body('notes').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
 ];
 
 const updateFarmingCycleRules = [
@@ -18,7 +19,7 @@ const updateFarmingCycleRules = [
   body('status').optional({ values: 'falsy' }).isIn(STATUS_VALUES).withMessage(`status must be one of: ${STATUS_VALUES.join(', ')}`),
   body('expectedYieldKg').optional({ values: 'falsy' }).isFloat({ min: 0 }).toFloat(),
   body('actualYieldKg').optional({ values: 'falsy' }).isFloat({ min: 0 }).toFloat(),
-  body('notes').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).escape(),
+  body('notes').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
 ];
 
 const farmingCycleIdRule = [param('id').isMongoId().withMessage('Invalid farming cycle id')];

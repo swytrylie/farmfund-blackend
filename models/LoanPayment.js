@@ -8,6 +8,11 @@ const receiptMetadataSchema = require('./schemas/receiptMetadata.schema');
  * - receiptMetadata: EMBEDDED → belongs directly to this payment.
  * - paymentTransaction: REFERENCE → gateway integration is a separate,
  *   not-yet-finalized technical concern (optional until that's built).
+ * - recordedBy: the cooperative staff member who entered this payment.
+ *   Payments are recorded by hand for now (cash, bank transfer, etc.), so
+ *   this is the audit trail — who said this money was received, and when.
+ *   Optional only because it won't exist on payments made before this
+ *   field was added or on future gateway-driven ones.
  */
 const loanPaymentSchema = new mongoose.Schema(
   {
@@ -22,6 +27,10 @@ const loanPaymentSchema = new mongoose.Schema(
       type: String,
       enum: ['cash', 'bank_transfer', 'mobile_wallet', 'other'],
       default: 'cash',
+    },
+    recordedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
 
     // EMBEDDED sub-document

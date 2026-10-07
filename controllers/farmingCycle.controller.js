@@ -24,7 +24,7 @@ async function getFieldAndAssertAccess(fieldId, user) {
 
 // POST /api/farming-cycles
 async function createFarmingCycle(req, res) {
-  const { field: fieldId, crop: cropId, startDate, endDate, status, expectedYieldKg, notes } = req.body;
+  const { field: fieldId, crop: cropId, customCropName, startDate, endDate, status, expectedYieldKg, notes } = req.body;
 
   await getFieldAndAssertAccess(fieldId, req.user);
 
@@ -35,6 +35,7 @@ async function createFarmingCycle(req, res) {
   const cycle = await FarmingCycle.create({
     field: fieldId,
     crop: cropId,
+    customCropName,
     startDate,
     endDate,
     status,

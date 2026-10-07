@@ -1,8 +1,12 @@
 const { body, param, query } = require('express-validator');
 
+// Text is stored exactly as typed (so "Smith & Sons" stays "Smith & Sons").
+// React escapes it when showing it on a page. We only refuse < and >.
+const noBrackets = (v) => !/[<>]/.test(v || '');
+
 const createFarmRules = [
-  body('name').trim().notEmpty().withMessage('name is required').isLength({ max: 100 }).escape(),
-  body('location.address').optional({ values: 'falsy' }).trim().isLength({ max: 255 }).escape(),
+  body('name').trim().notEmpty().withMessage('name is required').isLength({ max: 100 }).withMessage('name must be at most 100 characters').custom(noBrackets).withMessage('name cannot contain < or >'),
+  body('location.address').optional({ values: 'falsy' }).trim().isLength({ max: 255 }).withMessage('address must be at most 255 characters').custom(noBrackets).withMessage('address cannot contain < or >'),
   body('location.latitude').optional({ values: 'falsy' }).isFloat({ min: -90, max: 90 }).toFloat(),
   body('location.longitude').optional({ values: 'falsy' }).isFloat({ min: -180, max: 180 }).toFloat(),
   body('totalAreaHectares').optional({ values: 'falsy' }).isFloat({ min: 0 }).toFloat(),
@@ -10,8 +14,8 @@ const createFarmRules = [
 
 const updateFarmRules = [
   param('id').isMongoId().withMessage('Invalid farm id'),
-  body('name').optional().trim().isLength({ max: 100 }).escape(),
-  body('location.address').optional({ values: 'falsy' }).trim().isLength({ max: 255 }).escape(),
+  body('name').optional().trim().isLength({ max: 100 }).withMessage('name must be at most 100 characters').custom(noBrackets).withMessage('name cannot contain < or >'),
+  body('location.address').optional({ values: 'falsy' }).trim().isLength({ max: 255 }).withMessage('address must be at most 255 characters').custom(noBrackets).withMessage('address cannot contain < or >'),
   body('location.latitude').optional({ values: 'falsy' }).isFloat({ min: -90, max: 90 }).toFloat(),
   body('location.longitude').optional({ values: 'falsy' }).isFloat({ min: -180, max: 180 }).toFloat(),
   body('totalAreaHectares').optional({ values: 'falsy' }).isFloat({ min: 0 }).toFloat(),

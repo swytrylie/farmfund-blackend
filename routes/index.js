@@ -4,13 +4,33 @@ const cropRoutes = require('./crop.routes');
 const farmRoutes = require('./farm.routes');
 const fieldRoutes = require('./field.routes');
 const farmingCycleRoutes = require('./farmingCycle.routes');
+const financialRecordRoutes = require('./financialRecord.routes');
+const financialCategoryRoutes = require('./financialCategory.routes');
+const budgetRoutes = require('./budget.routes');
+const loanRoutes = require('./loan.routes');
+const loanPaymentRoutes = require('./loanPayment.routes');
+const cooperativeRoutes = require('./cooperative.routes');
+const dismissedAlertRoutes = require('./dismissedAlert.routes');
+const cooperativeInviteRoutes = require('./cooperativeInvite.routes');
+const cooperativeMemberRoutes = require('./cooperativeMember.routes');
+const loanReminderRoutes = require('./loanReminder.routes');
 
 const router = express.Router();
 
+router.use('/loan-reminders', loanReminderRoutes);
 router.use('/auth', authRoutes);
 router.use('/crops', cropRoutes);
 router.use('/farms', farmRoutes);
 router.use('/fields', fieldRoutes);
 router.use('/farming-cycles', farmingCycleRoutes);
+router.use('/financial-records', financialRecordRoutes);
+router.use('/financial-categories', financialCategoryRoutes);
+router.use('/budgets', budgetRoutes);
+router.use('/loans', loanRoutes);
+router.use('/loan-payments', loanPaymentRoutes);
+router.use('/cooperatives', cooperativeRoutes);
+router.use('/dismissed-alerts', dismissedAlertRoutes);
+router.use('/cooperative-invites', cooperativeInviteRoutes);
+router.use('/cooperative-members', cooperativeMemberRoutes);
 
 module.exports = router;

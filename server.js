@@ -41,10 +41,16 @@ app.use(
 );
 
 // Rate limiting: blunt brute-force/abuse attempts against the whole API.
-// 100 requests per 15 minutes per IP is a reasonable general-purpose default.
+// 100 requests per 15 minutes per IP is reasonable for a simple API where
+// each page load makes one or two calls — but this app's pages each make
+// several real calls at once (Dashboard alone makes 3), so normal
+// navigation during development was hitting this limit easily. In
+// production it stays a protective 200; in development it's high enough
+// that genuine usage/testing never bumps into it.
+const isProd = process.env.NODE_ENV === 'production';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: isProd ? 200 : 2000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later' },
