@@ -6,18 +6,17 @@ const Cooperative = require('../models/Cooperative');
 const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
-const { assertCooperativeStaffOrAdmin } = require('../utils/cooperativeMembership');
+const { assertCooperativeOwnerOrAdmin } = require('../utils/cooperativeOwner');
 const { sendInviteEmail } = require('../utils/mailer');
 
 const SALT_ROUNDS = 12;
 
 // POST /api/cooperative-invites
-// Creating an invite is restricted the same way editing the cooperative's
-// own profile is — owner/finance_manager of THAT specific cooperative.
+// Creating an invite is OWNER-only (or a platform admin).
 async function createInvite(req, res) {
   const { cooperative: cooperativeId, email, role } = req.body;
 
-  await assertCooperativeStaffOrAdmin(cooperativeId, req.user);
+  await assertCooperativeOwnerOrAdmin(cooperativeId, req.user, 'Only the cooperative owner can manage invitations');
 
   const coop = await Cooperative.findById(cooperativeId);
   if (!coop) throw ApiError.notFound('Cooperative not found');
@@ -77,19 +76,12 @@ async function createInvite(req, res) {
 }
 
 // GET /api/cooperative-invites?cooperative=X
-// Viewing pending invites uses the same broader rule as viewing the
-// cooperative itself — any active member, not just owner/finance_manager.
+// Pending invites are the OWNER's to see — finance managers and members
+// can't view or manage invitations.
 async function listInvites(req, res) {
   const { cooperative: cooperativeId } = req.query;
 
-  if (req.user.role !== 'admin') {
-    const membership = await CooperativeMember.findOne({
-      cooperative: cooperativeId,
-      user: req.user._id,
-      status: 'active',
-    });
-    if (!membership) throw ApiError.forbidden('You do not have access to this resource');
-  }
+  await assertCooperativeOwnerOrAdmin(cooperativeId, req.user, 'Only the cooperative owner can view invitations');
 
   const invites = await CooperativeInvite.find({ cooperative: cooperativeId, status: 'pending' })
     .select('email role status expiresAt createdAt')
@@ -99,12 +91,12 @@ async function listInvites(req, res) {
   new ApiResponse(200, invites, 'Invites retrieved successfully').send(res);
 }
 
-// DELETE /api/cooperative-invites/:id  — revoke a pending invite
+// DELETE /api/cooperative-invites/:id  — revoke a pending invite (OWNER-only)
 async function revokeInvite(req, res) {
   const invite = await CooperativeInvite.findById(req.params.id);
   if (!invite) throw ApiError.notFound('Invite not found');
 
-  await assertCooperativeStaffOrAdmin(invite.cooperative, req.user);
+  await assertCooperativeOwnerOrAdmin(invite.cooperative, req.user, 'Only the cooperative owner can manage invitations');
 
   invite.status = 'revoked';
   await invite.save();

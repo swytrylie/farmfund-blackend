@@ -1,7 +1,9 @@
-const { query } = require('express-validator');
+const { query, param } = require('express-validator');
 
 const listCooperativeMembersRules = [
   query('cooperative').isMongoId().withMessage('A valid cooperative id is required'),
 ];
 
-module.exports = { listCooperativeMembersRules };
+const memberIdRule = [param('id').isMongoId().withMessage('A valid member id is required')];
+
+module.exports = { listCooperativeMembersRules, memberIdRule };

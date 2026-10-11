@@ -151,4 +151,159 @@ async function sendEmailChangedNotice(to, newEmail, secureLink) {
   );
 }
 
-module.exports = { sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendEmailChangedNotice };
+// Sent to someone the cooperative's owner removed. Their account is deleted
+// as part of the removal, so this email is the only notice they get — it says
+// plainly what happened and that they can sign up again with the same email.
+async function sendAccountRemovedEmail(to, firstName, cooperativeName) {
+  const coop = escapeHtml(cooperativeName || 'your cooperative');
+  const hello = firstName ? `Hi ${escapeHtml(firstName)},` : 'Hello,';
+  await sendEmail(
+    to,
+    'Your FarmFund account has been deleted',
+    `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #2d4027;">Your account was removed</h2>
+        <p>${hello}</p>
+        <p>The owner of <strong>${coop}</strong> removed you from the cooperative on FarmFund. Because of that, your FarmFund account has been <strong>deleted</strong> and you can no longer sign in with it.</p>
+        <p>If you believe this was a mistake, please contact the cooperative's owner directly. You are always welcome to create a new FarmFund account with this email address.</p>
+        <p style="color: #666; font-size: 13px;">This is an automatic message from FarmFund.</p>
+      </div>
+    `
+  );
+}
+
+// Sent to a cooperative's owner when an admin approves or declines the
+// application. The approved email links to the login page; the declined one
+// says plainly that the account can't be used.
+async function sendCooperativeDecisionEmail(to, firstName, cooperativeName, approved) {
+  const coop = escapeHtml(cooperativeName || 'your cooperative');
+  const hello = firstName ? `Hi ${escapeHtml(firstName)},` : 'Hello,';
+  const loginUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/+$/, '') : '';
+  const button = loginUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(loginUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Log in to FarmFund</a></p>`
+    : '';
+  const subject = approved
+    ? 'Your organization was approved on FarmFund'
+    : 'Update on your FarmFund organization application';
+  const body = approved
+    ? `<h2 style="color: #2d4027;">You're approved</h2>
+        <p>${hello}</p>
+        <p><strong>${coop}</strong> has been approved. You can now log in as the owner and start using FarmFund.</p>
+        ${button}`
+    : `<h2 style="color: #2d4027;">Application not approved</h2>
+        <p>${hello}</p>
+        <p>Your application for <strong>${coop}</strong> was not approved, so the account can't be used to log in.</p>
+        <p>If you think this was a mistake, please contact FarmFund support.</p>`;
+  await sendEmail(
+    to,
+    subject,
+    `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        ${body}
+        <p style="color: #666; font-size: 13px;">This is an automatic message from FarmFund.</p>
+      </div>
+    `
+  );
+}
+
+// ---- Emails sent when an ADMIN acts on someone's account ----
+
+function helloLine(firstName) {
+  return firstName ? `Hi ${escapeHtml(firstName)},` : 'Hello,';
+}
+
+function wrapEmail(body) {
+  return `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        ${body}
+        <p style="color: #666; font-size: 13px;">This is an automatic message from FarmFund.</p>
+      </div>
+    `;
+}
+
+async function sendAccountSuspendedEmail(to, firstName, reason) {
+  const why = reason
+    ? `<p><strong>Reason given:</strong> ${escapeHtml(reason)}</p>`
+    : '';
+  await sendEmail(
+    to,
+    'Your FarmFund account has been suspended',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Account suspended</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator has suspended your account, so you can't sign in for now.</p>
+        ${why}
+        <p>If you think this was a mistake, please contact FarmFund support.</p>`)
+  );
+}
+
+async function sendAccountReactivatedEmail(to, firstName) {
+  const loginUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/+$/, '') : '';
+  const button = loginUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(loginUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Log in to FarmFund</a></p>`
+    : '';
+  await sendEmail(
+    to,
+    'Your FarmFund account is active again',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Welcome back</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator has reactivated your account. You can sign in again with your usual email and password.</p>
+        ${button}`)
+  );
+}
+
+async function sendAccountDeletedByAdminEmail(to, firstName) {
+  await sendEmail(
+    to,
+    'Your FarmFund account has been deleted',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Account deleted</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator has deleted your account and its data. You can no longer sign in with it.</p>
+        <p>If you believe this was a mistake, please contact FarmFund support. You are welcome to create a new account with this email address.</p>`)
+  );
+}
+
+// Goes to the OLD address (the one that just stopped working) and, separately,
+// to the new one so the person knows what to sign in with from now on.
+async function sendAdminEmailChangeNotice(to, firstName, oldEmail, newEmail, isNewAddress) {
+  const body = isNewAddress
+    ? `<p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator changed the email on your account. From now on, sign in with <strong>${escapeHtml(newEmail)}</strong> and your usual password.</p>`
+    : `<p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator changed the email on your account from <strong>${escapeHtml(oldEmail)}</strong> to <strong>${escapeHtml(newEmail)}</strong>. You were signed out everywhere.</p>
+        <p>If you weren't expecting this, please contact FarmFund support.</p>`;
+  await sendEmail(to, 'The email on your FarmFund account was changed', wrapEmail(`<h2 style="color: #2d4027;">Email changed</h2>${body}`));
+}
+
+// The admin can't set someone's password — they can only ask the person to
+// reset it themselves, through the normal Forgot Password steps.
+async function sendAdminPasswordResetRequest(to, firstName) {
+  const loginUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/+$/, '') : '';
+  const button = loginUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(loginUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Open FarmFund</a></p>`
+    : '';
+  await sendEmail(
+    to,
+    'Please reset your FarmFund password',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Reset your password</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator asked that you reset your password.</p>
+        <ol>
+          <li>Open FarmFund and choose <strong>Log in</strong>.</li>
+          <li>Click <strong>Forgot Password?</strong> and enter this email address.</li>
+          <li>Enter the 6-digit code we email you, then choose a new password.</li>
+        </ol>
+        ${button}
+        <p style="color: #666; font-size: 13px;">If you weren't expecting this, you can ignore this email — your password hasn't changed.</p>`)
+  );
+}
+
+module.exports = {
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendEmailChangedNotice,
+  sendAccountRemovedEmail, sendCooperativeDecisionEmail,
+  sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
+  sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,
+};

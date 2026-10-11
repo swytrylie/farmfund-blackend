@@ -1,8 +1,10 @@
 const Cooperative = require('../models/Cooperative');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
-const { assertCooperativeStaffOrAdmin } = require('../utils/cooperativeMembership');
+const { assertCooperativeOwnerOrAdmin } = require('../utils/cooperativeOwner');
 const CooperativeMember = require('../models/CooperativeMember');
+const { sendCooperativeDecisionEmail } = require('../utils/mailer');
+const { recordAudit } = require('../utils/audit');
 
 // GET /api/cooperatives
 // Defaults to 'active' — any farmer needs to see this list to pick a
@@ -46,16 +48,15 @@ async function getCooperativeById(req, res) {
 
 // PATCH /api/cooperatives/:id
 // Editing the cooperative's own details (name, registration number,
-// address, contact info) is restricted to THAT cooperative's owner or
-// finance_manager — the same bar as approving a loan, since this is
-// organization-level information, not something any plain member should
-// be able to change. status is deliberately NOT editable here — that
-// stays admin-only via updateCooperativeStatus below, unchanged.
+// address, contact info) is restricted to THAT cooperative's OWNER (or a
+// platform admin). Finance managers and members can view these details but
+// not change them. status is deliberately NOT editable here — that stays
+// admin-only via updateCooperativeStatus below, unchanged.
 async function updateCooperative(req, res) {
   const cooperative = await Cooperative.findById(req.params.id);
   if (!cooperative) throw ApiError.notFound('Cooperative not found');
 
-  await assertCooperativeStaffOrAdmin(cooperative._id, req.user);
+  await assertCooperativeOwnerOrAdmin(cooperative._id, req.user, 'Only the cooperative owner can edit the cooperative profile');
 
   const allowedFields = ['name', 'registrationNumber', 'address', 'contactEmail', 'contactPhone'];
   for (const key of allowedFields) {
@@ -75,10 +76,43 @@ async function updateCooperativeStatus(req, res) {
   const cooperative = await Cooperative.findById(req.params.id);
   if (!cooperative) throw ApiError.notFound('Cooperative not found');
 
+  const previousStatus = cooperative.status;
   cooperative.status = req.body.status;
   await cooperative.save();
 
-  new ApiResponse(200, cooperative, 'Cooperative status updated successfully').send(res);
+  // Tell the owner the decision — only when an application actually moves to
+  // approved or declined (not when the same status is sent twice). A failed
+  // email never undoes the decision; the response says whether it went out.
+  let emailSent = null;
+  const decided = cooperative.status !== previousStatus && ['active', 'rejected'].includes(cooperative.status);
+  if (decided) {
+    emailSent = false;
+    try {
+      const ownerMembership = await CooperativeMember.findOne({
+        cooperative: cooperative._id,
+        role: 'owner',
+        status: 'active',
+      }).populate('user', 'firstName email');
+      const owner = ownerMembership && ownerMembership.user;
+      if (owner && owner.email) {
+        await sendCooperativeDecisionEmail(owner.email, owner.firstName, cooperative.name, cooperative.status === 'active');
+        emailSent = true;
+      }
+    } catch (err) {
+      console.error('Failed to send cooperative decision email:', err.message);
+    }
+  }
+
+  if (decided) {
+    await recordAudit(req.user, cooperative.status === 'active' ? 'cooperative.approve' : 'cooperative.reject', {
+      targetType: 'cooperative',
+      targetId: cooperative._id,
+      targetLabel: cooperative.name,
+      details: { from: previousStatus, to: cooperative.status, ownerEmailSent: emailSent },
+    });
+  }
+
+  new ApiResponse(200, { ...cooperative.toObject(), emailSent }, 'Cooperative status updated successfully').send(res);
 }
 
 module.exports = { getCooperatives, getCooperativeById, updateCooperative, updateCooperativeStatus };

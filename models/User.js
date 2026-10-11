@@ -47,6 +47,12 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
 
+    // Set by an admin when an account is suspended (isActive -> false) or
+    // reactivated: why (only kept while suspended), when, and which admin.
+    statusReason: { type: String, trim: true, maxlength: 300 },
+    statusChangedAt: { type: Date },
+    statusChangedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
     isEmailVerified: { type: Boolean },
 
     // One-time-code fields — shared by signup verification, password-change

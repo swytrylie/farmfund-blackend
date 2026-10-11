@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Cooperative = require('../models/Cooperative');
 const CooperativeMember = require('../models/CooperativeMember');
 const { sendOtpEmail, sendEmailChangedNotice } = require('../utils/mailer');
+const { recordLoginEvent } = require('../utils/loginEvents');
 const { buildOtp, issueOtp, releaseCooldown, checkAndConsumeOtp } = require('../utils/otp');
 
 // Shared by login() and getMe() — a User's role is only ever "user" or
@@ -15,14 +16,38 @@ const { buildOtp, issueOtp, releaseCooldown, checkAndConsumeOtp } = require('../
 // page refresh silently lost accountType and fell back to the farmer
 // dashboard even for a real organization account).
 async function getAccountTypeFields(userId) {
-  const membership = await CooperativeMember.findOne({ user: userId, status: 'active' }).populate('cooperative', 'name');
+  const membership = await CooperativeMember.findOne({ user: userId, status: 'active' }).populate('cooperative', 'name status');
   if (!membership) return {};
   return {
     accountType: 'organization',
     orgName: membership.cooperative?.name,
     orgRole: membership.role,
     cooperativeId: membership.cooperative?._id,
+    cooperativeStatus: membership.cooperative?.status,
   };
+}
+
+// An organization account (owner OR staff) can only be used once an admin has
+// approved the cooperative. While it is still "pending" or was "rejected", they
+// can verify their email but cannot sign in. Returns the message to show, or
+// null when there is no problem (individual accounts, admins, and approved
+// cooperatives all return null).
+function suspendedMessage(reason) {
+  const why = reason ? ` Reason: ${reason}.` : '';
+  return `Your account has been suspended.${why} If you think this is a mistake, please contact support.`;
+}
+
+const COOP_PENDING_MESSAGE =
+  "Your organization is still waiting for admin approval. We'll email you as soon as it's approved.";
+const COOP_REJECTED_MESSAGE =
+  "Your organization's application was declined, so this account can't be used. If you think this is a mistake, please contact support.";
+
+async function getCooperativeBlockMessage(userId) {
+  const membership = await CooperativeMember.findOne({ user: userId, status: 'active' }).populate('cooperative', 'status');
+  const status = membership?.cooperative?.status;
+  if (status === 'pending') return COOP_PENDING_MESSAGE;
+  if (status === 'rejected') return COOP_REJECTED_MESSAGE;
+  return null;
 }
 
 const ApiError = require('../utils/ApiError');
@@ -249,6 +274,20 @@ async function verifySignupOtp(req, res) {
   const user = await User.findById(found._id);
   user.isEmailVerified = true;
 
+  // An organization sign-up has to be approved by an admin first, so there is
+  // no session to hand out yet: the email is confirmed, and that is all.
+  const blockMessage = await getCooperativeBlockMessage(user._id);
+  if (blockMessage) {
+    await user.save();
+    const accountFields = await getAccountTypeFields(user._id);
+    new ApiResponse(200, {
+      pendingApproval: true,
+      orgName: accountFields.orgName,
+      message: blockMessage,
+    }, 'Email verified successfully').send(res);
+    return;
+  }
+
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
   user.refreshTokenHash = hashToken(refreshToken);
@@ -295,8 +334,31 @@ async function resendSignupOtp(req, res) {
   new ApiResponse(200, null, 'A new code has been sent').send(res);
 }
 
+// Tags a login error with WHY it failed, for the admin "User Activity" log.
+const withReason = (err, reason) => {
+  err.loginReason = reason;
+  return err;
+};
+
 // POST /api/auth/login
+// Every attempt is written to the login log (best-effort, never breaks the
+// login). A failure is an error carrying a loginReason; it is logged here,
+// before the error response goes out. A success is logged inside loginCore,
+// just BEFORE the response is sent: on a serverless host like Vercel the
+// function can be frozen the moment the response leaves, so nothing may be
+// left to do afterwards. Errors without a reason (server faults) are not logged.
 async function login(req, res) {
+  try {
+    await loginCore(req, res);
+  } catch (err) {
+    if (err && err.loginReason) {
+      await recordLoginEvent(req, { user: req.loginUserId, email: req.body && req.body.email, success: false, reason: err.loginReason });
+    }
+    throw err;
+  }
+}
+
+async function loginCore(req, res) {
   const { email, password } = req.body;
 
   // Explicitly select passwordHash + lockout fields since the schema hides them by default
@@ -308,7 +370,17 @@ async function login(req, res) {
   // wrong — never reveal which one, or attackers can enumerate real emails.
   const invalidCredentialsError = ApiError.unauthorized('Invalid email or password');
 
-  if (!user || !user.isActive) throw invalidCredentialsError;
+  if (!user) throw withReason(invalidCredentialsError, 'unknown_email');
+  req.loginUserId = user._id;
+
+  // A suspended account gets a real explanation — but only once the password
+  // is proven right, so strangers can't learn which emails are suspended. A
+  // wrong password stays the generic error and doesn't count toward lockout.
+  if (!user.isActive) {
+    const passwordIsRight = await user.comparePassword(password);
+    if (!passwordIsRight) throw withReason(invalidCredentialsError, 'wrong_password');
+    throw withReason(ApiError.forbidden(suspendedMessage(user.statusReason)), 'suspended');
+  }
 
   // Deliberately checks for EXACTLY `false`, not just falsy — every
   // account created before this feature existed has no value here at
@@ -317,19 +389,28 @@ async function login(req, res) {
   // flow, which explicitly sets this to false, is genuinely blocked
   // until verify-signup confirms the code.
   if (user.isEmailVerified === false) {
-    throw ApiError.forbidden('Please verify your email before logging in. Check your inbox for the code, or request a new one.');
+    throw withReason(
+      ApiError.forbidden('Please verify your email before logging in. Check your inbox for the code, or request a new one.'),
+      'unverified'
+    );
   }
 
   if (user.isLocked()) {
-    throw ApiError.forbidden(LOCKED_MESSAGE);
+    throw withReason(ApiError.forbidden(LOCKED_MESSAGE), 'locked');
   }
 
   const isMatch = await user.comparePassword(password);
 
   if (!isMatch) {
     await recordFailedPassword(user);
-    throw invalidCredentialsError;
+    throw withReason(invalidCredentialsError, 'wrong_password');
   }
+
+  // Right password, but the organization isn't approved (yet). Said only after
+  // the password is proven, so strangers can't probe which emails belong to
+  // pending cooperatives.
+  const loginBlockMessage = await getCooperativeBlockMessage(user._id);
+  if (loginBlockMessage) throw withReason(ApiError.forbidden(loginBlockMessage), 'org_not_approved');
 
   // Successful login: reset lockout counters, issue fresh tokens
   user.failedLoginAttempts = 0;
@@ -352,6 +433,9 @@ async function login(req, res) {
   // (owner, finance_manager, or member) — all of them belong to the
   // organization side of the app, even if what they can each do inside it
   // differs.
+  const accountFields = await getAccountTypeFields(user._id);
+  await recordLoginEvent(req, { user: user._id, email: req.body && req.body.email, success: true });
+
   new ApiResponse(200, {
     accessToken,
     user: {
@@ -360,7 +444,7 @@ async function login(req, res) {
       lastName: user.lastName,
       email: user.email,
       role: user.role,
-      ...(await getAccountTypeFields(user._id)),
+      ...accountFields,
     },
   }, 'Login successful').send(res);
 }
@@ -388,6 +472,11 @@ async function refresh(req, res) {
     await user.save();
     throw ApiError.unauthorized('Refresh token invalid — please log in again');
   }
+
+  // If an admin rejects (or re-opens) the cooperative while someone is logged
+  // in, their session ends the next time it is renewed.
+  const refreshBlockMessage = await getCooperativeBlockMessage(user._id);
+  if (refreshBlockMessage) throw ApiError.forbidden(refreshBlockMessage);
 
   // Rotation: every refresh issues a brand new refresh token and
   // invalidates the old one, limiting how long a leaked token is useful.
@@ -434,12 +523,28 @@ async function getMe(req, res) {
   }).send(res);
 }
 
+// Inside a cooperative, only the OWNER may change their own name and email.
+// Finance managers and members can look at them but not edit — the owner is
+// the one who knows who they invited and who they are. Everyone can still
+// change their own password. Accounts that belong to no cooperative (an
+// individual farmer, an admin) are not affected.
+const STAFF_PROFILE_LOCKED_MESSAGE =
+  "Only your cooperative's owner can change your name or email. You can still change your password.";
+
+async function assertCanEditOwnProfile(userId) {
+  const membership = await CooperativeMember.findOne({ user: userId, status: 'active' }).select('role');
+  if (membership && membership.role !== 'owner') {
+    throw ApiError.forbidden(STAFF_PROFILE_LOCKED_MESSAGE);
+  }
+}
+
 // PATCH /api/auth/me
 // Updates the LOGGED-IN user's own profile — req.user._id is used
 // directly, never a client-supplied id, so there's no way to edit
 // someone else's account through this endpoint.
 async function updateProfile(req, res) {
   const { firstName, lastName, email, phone } = req.body;
+  await assertCanEditOwnProfile(req.user._id);
   const user = await User.findById(req.user._id);
 
   // The email address is deliberately NOT changeable here. Switching it
@@ -529,6 +634,7 @@ async function verifyPasswordChange(req, res) {
 // code to the NEW address. The address on the account does not change yet.
 async function requestEmailChange(req, res) {
   const { newEmail, password } = req.body;
+  await assertCanEditOwnProfile(req.user._id);
 
   const user = await User.findById(req.user._id).select('+passwordHash +failedLoginAttempts +lockUntil');
   if (user.isLocked()) throw ApiError.forbidden(LOCKED_MESSAGE);
@@ -562,6 +668,7 @@ async function requestEmailChange(req, res) {
 // reachable by this person. Only now does the account's email change.
 async function verifyEmailChange(req, res) {
   const { code } = req.body;
+  await assertCanEditOwnProfile(req.user._id);
 
   await checkAndConsumeOtp(User, req.user._id, 'email_change', code);
 
