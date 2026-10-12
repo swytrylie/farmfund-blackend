@@ -13,6 +13,7 @@ const ACTION_TEXT = {
   'cooperative.reject': 'Declined cooperative',
   'financial.access_granted': 'Opened a farmer\'s financial records',
   'financial.view_records': 'Viewed a farmer\'s financial records',
+  'announcement.send': 'Sent announcement',
 };
 
 const FIELD_TEXT = { firstName: 'first name', lastName: 'last name', email: 'email' };
@@ -41,6 +42,12 @@ function detailText(action, details) {
     if (d.caseRef) parts.push(`Case: ${d.caseRef}`);
   }
   if (action === 'financial.view_records' && d.caseRef) parts.push(`Case: ${d.caseRef}`);
+
+  if (action === 'announcement.send') {
+    const who = { all: 'All Users', farm_owners: 'Farm Owners', cooperatives: 'Cooperatives' }[d.audience] || d.audience;
+    if (who) parts.push(`To: ${who}`);
+    if (typeof d.sent === 'number' && typeof d.recipients === 'number') parts.push(`Delivered to ${d.sent} of ${d.recipients}`);
+  }
 
   if (action === 'cooperative.approve' || action === 'cooperative.reject') {
     if (d.ownerEmailSent === false) parts.push("Email to the owner couldn't be sent");

@@ -15,6 +15,7 @@ const cooperativeInviteRoutes = require('./cooperativeInvite.routes');
 const cooperativeMemberRoutes = require('./cooperativeMember.routes');
 const loanReminderRoutes = require('./loanReminder.routes');
 const adminRoutes = require('./admin.routes');
+const announcementRoutes = require('./announcement.routes');
 
 const router = express.Router();
 
@@ -34,5 +35,6 @@ router.use('/dismissed-alerts', dismissedAlertRoutes);
 router.use('/cooperative-invites', cooperativeInviteRoutes);
 router.use('/cooperative-members', cooperativeMemberRoutes);
 router.use('/admin', adminRoutes);
+router.use('/announcements', announcementRoutes);
 
 module.exports = router;
