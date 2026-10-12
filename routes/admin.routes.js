@@ -16,6 +16,8 @@ const { listFarms } = require('../controllers/adminFarms.controller');
 const { listFarmsRules } = require('../validators/adminFarms.validator');
 const { listActivity } = require('../controllers/adminActivity.controller');
 const { listActivityRules } = require('../validators/adminActivity.validator');
+const { getOverview, listFarmers, grantAccess, getFarmerRecords } = require('../controllers/adminFinancial.controller');
+const { farmerIdRule, listFarmersRules, grantAccessRules } = require('../validators/adminFinancial.validator');
 const { listAuditLogsRules } = require('../validators/adminAudit.validator');
 const { userIdRule, listUsersRules, suspendRules, updateUserRules } = require('../validators/adminUsers.validator');
 
@@ -36,5 +38,9 @@ router.delete('/users/:id', userIdRule, handleValidationErrors, asyncHandler(del
 router.get('/audit-logs', listAuditLogsRules, handleValidationErrors, asyncHandler(listAuditLogs));
 router.get('/farms', listFarmsRules, handleValidationErrors, asyncHandler(listFarms));
 router.get('/activity', listActivityRules, handleValidationErrors, asyncHandler(listActivity));
+router.get('/financial/overview', asyncHandler(getOverview));
+router.get('/financial/farmers', listFarmersRules, handleValidationErrors, asyncHandler(listFarmers));
+router.post('/financial/farmers/:id/access', grantAccessRules, handleValidationErrors, asyncHandler(grantAccess));
+router.get('/financial/farmers/:id/records', farmerIdRule, handleValidationErrors, asyncHandler(getFarmerRecords));
 
 module.exports = router;

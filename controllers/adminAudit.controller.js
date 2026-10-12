@@ -11,6 +11,8 @@ const ACTION_TEXT = {
   'user.delete': 'Deleted account',
   'cooperative.approve': 'Approved cooperative',
   'cooperative.reject': 'Declined cooperative',
+  'financial.access_granted': 'Opened a farmer\'s financial records',
+  'financial.view_records': 'Viewed a farmer\'s financial records',
 };
 
 const FIELD_TEXT = { firstName: 'first name', lastName: 'last name', email: 'email' };
@@ -33,6 +35,12 @@ function detailText(action, details) {
       .map((k) => `${FIELD_TEXT[k]}: ${d.before[k] === undefined ? '—' : d.before[k]} → ${d.after[k]}`);
     if (changes.length) parts.push(`Changed ${changes.join('; ')}`);
   }
+
+  if (action === 'financial.access_granted') {
+    if (d.reason) parts.push(`Reason: ${d.reason}`);
+    if (d.caseRef) parts.push(`Case: ${d.caseRef}`);
+  }
+  if (action === 'financial.view_records' && d.caseRef) parts.push(`Case: ${d.caseRef}`);
 
   if (action === 'cooperative.approve' || action === 'cooperative.reject') {
     if (d.ownerEmailSent === false) parts.push("Email to the owner couldn't be sent");
