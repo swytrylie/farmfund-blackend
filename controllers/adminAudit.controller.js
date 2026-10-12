@@ -14,7 +14,18 @@ const ACTION_TEXT = {
   'financial.access_granted': 'Opened a farmer\'s financial records',
   'financial.view_records': 'Viewed a farmer\'s financial records',
   'announcement.send': 'Sent announcement',
+  'backup.create': 'Ran a backup',
+  'backup.download': 'Downloaded a backup',
+  'backup.restore': 'Restored a backup',
+  'backup.restore_failed': 'A restore failed',
 };
+
+function bytesText(n) {
+  if (typeof n !== 'number' || n < 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const FIELD_TEXT = { firstName: 'first name', lastName: 'last name', email: 'email' };
 
@@ -47,6 +58,18 @@ function detailText(action, details) {
     const who = { all: 'All Users', farm_owners: 'Farm Owners', cooperatives: 'Cooperatives' }[d.audience] || d.audience;
     if (who) parts.push(`To: ${who}`);
     if (typeof d.sent === 'number' && typeof d.recipients === 'number') parts.push(`Delivered to ${d.sent} of ${d.recipients}`);
+  }
+
+  if (action === 'backup.create') {
+    if (typeof d.totalRecords === 'number') parts.push(`${d.totalRecords} records`);
+    if (typeof d.sizeBytes === 'number') parts.push(bytesText(d.sizeBytes));
+  }
+  if (action === 'backup.restore') {
+    if (typeof d.totalRecords === 'number') parts.push(`${d.totalRecords} records restored`);
+    parts.push('A safety backup of the earlier data was saved first');
+  }
+  if (action === 'backup.restore_failed') {
+    parts.push(d.rolledBack ? 'Data was put back as it was before' : 'The automatic undo also failed — a safety backup is available');
   }
 
   if (action === 'cooperative.approve' || action === 'cooperative.reject') {

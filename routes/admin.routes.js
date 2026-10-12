@@ -21,6 +21,8 @@ const { farmerIdRule, listFarmersRules, grantAccessRules } = require('../validat
 const { getReports } = require('../controllers/adminReports.controller');
 const { listAnnouncements, sendAnnouncement } = require('../controllers/adminAnnouncements.controller');
 const { listAnnouncementsRules, sendAnnouncementRules } = require('../validators/adminAnnouncements.validator');
+const { listBackups, runBackup, downloadBackup, restore } = require('../controllers/adminBackup.controller');
+const { listBackupsRules, backupIdRule, restoreRules } = require('../validators/adminBackup.validator');
 const { listAuditLogsRules } = require('../validators/adminAudit.validator');
 const { userIdRule, listUsersRules, suspendRules, updateUserRules } = require('../validators/adminUsers.validator');
 
@@ -48,5 +50,9 @@ router.get('/financial/farmers/:id/records', farmerIdRule, handleValidationError
 router.get('/reports', asyncHandler(getReports));
 router.get('/announcements', listAnnouncementsRules, handleValidationErrors, asyncHandler(listAnnouncements));
 router.post('/announcements', sendAnnouncementRules, handleValidationErrors, asyncHandler(sendAnnouncement));
+router.get('/backups', listBackupsRules, handleValidationErrors, asyncHandler(listBackups));
+router.post('/backups', asyncHandler(runBackup));
+router.get('/backups/:id/download', backupIdRule, handleValidationErrors, asyncHandler(downloadBackup));
+router.post('/backups/:id/restore', restoreRules, handleValidationErrors, asyncHandler(restore));
 
 module.exports = router;
