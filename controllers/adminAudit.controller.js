@@ -18,7 +18,16 @@ const ACTION_TEXT = {
   'backup.download': 'Downloaded a backup',
   'backup.restore': 'Restored a backup',
   'backup.restore_failed': 'A restore failed',
+  'system.maintenance_on': 'Turned maintenance mode on',
+  'system.maintenance_off': 'Turned maintenance mode off',
+  'system.maintenance_window': 'Changed the maintenance window',
 };
+
+function manilaRange(startIso, endIso) {
+  const fmt = (v) =>
+    new Date(v).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return `${fmt(startIso)} to ${fmt(endIso)}`;
+}
 
 function bytesText(n) {
   if (typeof n !== 'number' || n < 0) return '';
@@ -70,6 +79,12 @@ function detailText(action, details) {
   }
   if (action === 'backup.restore_failed') {
     parts.push(d.rolledBack ? 'Data was put back as it was before' : 'The automatic undo also failed — a safety backup is available');
+  }
+
+  if (action === 'system.maintenance_on') parts.push('Farmers and cooperatives are blocked until it is turned off');
+  if (action === 'system.maintenance_window') {
+    if (d.removed) parts.push('The scheduled window was removed');
+    else if (d.start && d.end) parts.push(`Window: ${manilaRange(d.start, d.end)} (Philippine time)`);
   }
 
   if (action === 'cooperative.approve' || action === 'cooperative.reject') {

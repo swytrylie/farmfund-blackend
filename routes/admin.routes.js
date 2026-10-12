@@ -23,6 +23,8 @@ const { listAnnouncements, sendAnnouncement } = require('../controllers/adminAnn
 const { listAnnouncementsRules, sendAnnouncementRules } = require('../validators/adminAnnouncements.validator');
 const { listBackups, runBackup, downloadBackup, restore } = require('../controllers/adminBackup.controller');
 const { listBackupsRules, backupIdRule, restoreRules } = require('../validators/adminBackup.validator');
+const { getSystem, setMaintenance, updateWindow } = require('../controllers/adminSystem.controller');
+const { maintenanceRules, windowRules } = require('../validators/adminSystem.validator');
 const { listAuditLogsRules } = require('../validators/adminAudit.validator');
 const { userIdRule, listUsersRules, suspendRules, updateUserRules } = require('../validators/adminUsers.validator');
 
@@ -54,5 +56,8 @@ router.get('/backups', listBackupsRules, handleValidationErrors, asyncHandler(li
 router.post('/backups', asyncHandler(runBackup));
 router.get('/backups/:id/download', backupIdRule, handleValidationErrors, asyncHandler(downloadBackup));
 router.post('/backups/:id/restore', restoreRules, handleValidationErrors, asyncHandler(restore));
+router.get('/system', asyncHandler(getSystem));
+router.patch('/system/maintenance', maintenanceRules, handleValidationErrors, asyncHandler(setMaintenance));
+router.put('/system/maintenance-window', windowRules, handleValidationErrors, asyncHandler(updateWindow));
 
 module.exports = router;

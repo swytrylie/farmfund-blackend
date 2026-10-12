@@ -17,8 +17,14 @@ const loanReminderRoutes = require('./loanReminder.routes');
 const adminRoutes = require('./admin.routes');
 const announcementRoutes = require('./announcement.routes');
 const cronRoutes = require('./cron.routes');
+const systemRoutes = require('./system.routes');
+const { maintenanceGuard } = require('../middleware/maintenanceGuard');
 
 const router = express.Router();
+
+// While maintenance is on, everything except sign-in, admin pages and the
+// status check answers 503 (see middleware/maintenanceGuard.js). Must come first.
+router.use(maintenanceGuard);
 
 router.use('/loan-reminders', loanReminderRoutes);
 router.use('/auth', authRoutes);
@@ -38,5 +44,6 @@ router.use('/cooperative-members', cooperativeMemberRoutes);
 router.use('/admin', adminRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/cron', cronRoutes);
+router.use('/system', systemRoutes);
 
 module.exports = router;
