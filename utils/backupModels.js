@@ -6,12 +6,17 @@
 //   AuditLog, LoginEvent  - history of what happened; a restore must never erase it
 //   RecordAccess          - admin access grants, not user data
 //   Backup, BackupChunk   - the backups themselves
+//   SystemSetting         - maintenance mode / window; a restore must not switch the site on or off
+//
+// Certificate rows are backed up (the record of each upload and its review). The
+// files themselves live in Cloudinary, which is not part of a backup.
 // Admin accounts are never touched either (see utils/backup.js).
 //
 // If you add a new model later, add it here too — otherwise it is not backed up.
 const MODELS = [
   require('../models/Announcement'),
   require('../models/Budget'),
+  require('../models/Certificate'),
   require('../models/Cooperative'),
   require('../models/CooperativeInvite'),
   require('../models/CooperativeMember'),
