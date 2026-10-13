@@ -88,12 +88,12 @@ async function remove(req, res) {
   new ApiResponse(200, null, 'Certificate deleted').send(res);
 }
 
-// GET /api/certificates/farmer/:farmerId — for the admin and a cooperative's staff
+// GET /api/certificates/farmer/:farmerId — the admin (can review) and a cooperative's staff (view only)
 async function listForFarmer(req, res) {
   const access = await accessFor(req.user, req.params.farmerId);
   if (!access) throw ApiError.forbidden('You do not have permission to view these certificates');
   const rows = await Certificate.find({ farmer: req.params.farmerId }).sort({ createdAt: -1, _id: -1 }).lean();
-  new ApiResponse(200, { certificates: rows.map(toRow), canReview: access !== 'self' }, 'Certificates fetched').send(res);
+  new ApiResponse(200, { certificates: rows.map(toRow), canReview: access === 'admin' }, 'Certificates fetched').send(res);
 }
 
 // GET /api/certificates/:id/link — a link that opens the file for 5 minutes
@@ -119,6 +119,8 @@ async function review(req, res) {
   const access = existing ? await accessFor(req.user, existing.farmer) : null;
   if (!existing || !access) throw ApiError.notFound('Certificate not found');
   if (access === 'self') throw ApiError.forbidden('You cannot review your own certificate');
+  // Cooperatives can see a borrower's certificates, but only the admin decides.
+  if (access !== 'admin') throw ApiError.forbidden('Only the FarmFund admin can verify or reject certificates');
 
   const status = req.body.status;
   const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
@@ -126,22 +128,20 @@ async function review(req, res) {
     status,
     reviewedBy: req.user._id,
     reviewedByName: fullName(req.user),
-    reviewedByRole: access === 'admin' ? 'admin' : 'cooperative',
+    reviewedByRole: 'admin',
     reviewedAt: new Date(),
   };
   const update = note ? { $set: { ...set, reviewNote: note } } : { $set: set, $unset: { reviewNote: '' } };
   const doc = await Certificate.findByIdAndUpdate(existing._id, update, { new: true }).lean();
   if (!doc) throw ApiError.notFound('Certificate not found');
 
-  if (access === 'admin') {
-    const farmer = await User.findById(doc.farmer).select('firstName lastName').lean();
-    await recordAudit(req.user, status === 'verified' ? 'certificate.verify' : 'certificate.reject', {
-      targetType: 'certificate',
-      targetId: doc._id,
-      targetLabel: `${fullName(farmer)} — ${doc.title}`,
-      details: { title: doc.title, note: note || undefined },
-    });
-  }
+  const farmer = await User.findById(doc.farmer).select('firstName lastName').lean();
+  await recordAudit(req.user, status === 'verified' ? 'certificate.verify' : 'certificate.reject', {
+    targetType: 'certificate',
+    targetId: doc._id,
+    targetLabel: `${fullName(farmer)} — ${doc.title}`,
+    details: { title: doc.title, note: note || undefined },
+  });
 
   new ApiResponse(200, { certificate: toRow(doc) }, status === 'verified' ? 'Certificate verified' : 'Certificate rejected').send(res);
 }
