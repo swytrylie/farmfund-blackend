@@ -1,6 +1,7 @@
 const Loan = require('../models/Loan');
 const LoanPayment = require('../models/LoanPayment');
 const LoanReminder = require('../models/LoanReminder');
+const Notification = require('../models/Notification');
 const CooperativeMember = require('../models/CooperativeMember');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
@@ -59,13 +60,54 @@ async function createLoanReminder(req, res) {
   const remaining = round2(Math.max(0, totalPayable(loan) - round2(sums[0]?.paid || 0)));
   if (remaining <= 0) throw ApiError.badRequest('This loan has nothing left to pay');
 
+  // A reminder counts as "just sent" if the email went out OR the borrower
+  // already got the in-app notification (so a retry after a failed email does
+  // not drop a second notification into their bell).
   const recent = await LoanReminder.findOne({
     loan: loan._id,
-    status: 'sent',
+    $or: [{ status: 'sent' }, { inApp: true }],
     createdAt: { $gt: new Date(Date.now() - COOLDOWN_MS) },
   });
   if (recent) {
     throw ApiError.conflict('A reminder for this loan was just sent — please wait a few minutes before sending another');
+  }
+
+  const loanRef = `#${String(loan._id).slice(-6).toUpperCase()}`;
+  const pastDue = loan.dueDate ? daysPastDue(loan.dueDate) : 0;
+  const dueNote = !loan.dueDate
+    ? ''
+    : pastDue > 0
+      ? `${pastDue} day${pastDue === 1 ? '' : 's'} overdue`
+      : pastDue === 0
+        ? 'due today'
+        : `due in ${-pastDue} day${pastDue === -1 ? '' : 's'}`;
+
+  // The borrower's bell and Alerts page. Only the borrower on this loan gets
+  // it. If saving it fails the email still goes out (and the list shows that
+  // the in-app notification did not happen).
+  let inApp = false;
+  try {
+    await Notification.create({
+      user: loan.farmer._id,
+      kind: 'payment_reminder',
+      title: `${TYPE_LABEL[type]} from ${loan.cooperative.name}`,
+      message,
+      details: {
+        coopName: loan.cooperative.name,
+        typeLabel: TYPE_LABEL[type],
+        loanRef,
+        remaining,
+        dueDate: loan.dueDate || undefined,
+        dueNote: dueNote || undefined,
+        contactEmail: loan.cooperative.contactEmail || undefined,
+        contactPhone: loan.cooperative.contactPhone || undefined,
+      },
+      loan: loan._id,
+      cooperative: loan.cooperative._id,
+    });
+    inApp = true;
+  } catch (err) {
+    console.error('Failed to save the in-app reminder notification:', err.message);
   }
 
   let status = 'sent';
@@ -79,17 +121,19 @@ async function createLoanReminder(req, res) {
       coopContactPhone: loan.cooperative.contactPhone,
       typeLabel: TYPE_LABEL[type],
       message,
-      loanRef: `#${String(loan._id).slice(-6).toUpperCase()}`,
+      loanRef,
       remaining,
       dueDate: loan.dueDate,
-      daysPastDue: loan.dueDate ? daysPastDue(loan.dueDate) : 0,
+      daysPastDue: pastDue,
     });
   } catch (err) {
     // The real reason stays in the server log; staff get a plain statement
     // that it didn't go out, and the attempt is still recorded as failed.
     console.error('Failed to send reminder email:', err.message);
     status = 'failed';
-    failureReason = 'The email could not be sent';
+    failureReason = inApp
+      ? 'The email could not be sent, but the borrower can see this reminder in their notifications'
+      : 'The email could not be sent';
   }
 
   const reminder = await LoanReminder.create({
@@ -98,13 +142,14 @@ async function createLoanReminder(req, res) {
     sentBy: req.user._id,
     type,
     channel: 'email',
+    inApp,
     message,
     recipientEmail: loan.farmer.email,
     status,
     failureReason,
   });
 
-  new ApiResponse(201, reminder, status === 'sent' ? 'Reminder sent' : 'Reminder could not be sent').send(res);
+  new ApiResponse(201, reminder, status === 'sent' ? 'Reminder sent' : 'Reminder email could not be sent').send(res);
 }
 
 // GET /api/loan-reminders?cooperative=<id>

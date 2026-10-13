@@ -8,6 +8,7 @@
 //   Backup, BackupChunk   - the backups themselves
 //   SystemSetting         - maintenance mode / window; a restore must not switch the site on or off
 //
+// Notification rows (what borrowers see in their bell) are backed up too.
 // Certificate rows are backed up (the record of each upload and its review). The
 // files themselves live in Cloudinary, which is not part of a backup.
 // Admin accounts are never touched either (see utils/backup.js).
@@ -30,6 +31,7 @@ const MODELS = [
   require('../models/Loan'),
   require('../models/LoanPayment'),
   require('../models/LoanReminder'),
+  require('../models/Notification'),
   require('../models/PaymentTransaction'),
   require('../models/User'),
 ];

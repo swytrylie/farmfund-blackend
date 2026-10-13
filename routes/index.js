@@ -19,6 +19,7 @@ const announcementRoutes = require('./announcement.routes');
 const cronRoutes = require('./cron.routes');
 const systemRoutes = require('./system.routes');
 const certificateRoutes = require('./certificate.routes');
+const notificationRoutes = require('./notification.routes');
 const { maintenanceGuard } = require('../middleware/maintenanceGuard');
 
 const router = express.Router();
@@ -47,5 +48,6 @@ router.use('/announcements', announcementRoutes);
 router.use('/cron', cronRoutes);
 router.use('/system', systemRoutes);
 router.use('/certificates', certificateRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;

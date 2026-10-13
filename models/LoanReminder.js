@@ -16,8 +16,9 @@ const mongoose = require('mongoose');
  * - failureReason is a generic, human-readable phrase. The real error from
  *   the mail server is logged server-side only — it can contain internal
  *   details that have no business appearing on a staff member's screen.
- * - channel only has "email" for now — there is no in-app inbox on the
- *   borrower's side for anything else to land in.
+ * - channel is the email. inApp says whether the borrower was ALSO given a
+ *   notification in the app (their bell and Alerts page). status below is
+ *   about the email only.
  */
 const loanReminderSchema = new mongoose.Schema(
   {
@@ -30,6 +31,7 @@ const loanReminderSchema = new mongoose.Schema(
       required: true,
     },
     channel: { type: String, enum: ['email'], default: 'email' },
+    inApp: { type: Boolean, default: false },
     message: { type: String, required: true, trim: true, maxlength: 200 },
     recipientEmail: { type: String, required: true, trim: true, lowercase: true },
     status: { type: String, enum: ['sent', 'failed'], required: true },
