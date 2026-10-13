@@ -241,4 +241,4 @@ async function restoreBackup({ backupId, actor }) {
   return { backup: snapshot.backup, safety };
 }
 
-module.exports = { createBackup, restoreBackup, loadSnapshot, buildDownload, pruneOld, LIMITS, KEEP };
+module.exports = { createBackup, restoreBackup, loadSnapshot, buildDownload, pruneOld, LIMITS, KEEP, USER_TRANSIENT_FIELDS };

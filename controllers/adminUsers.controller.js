@@ -1,16 +1,11 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const CooperativeMember = require('../models/CooperativeMember');
-const Farm = require('../models/Farm');
-const Field = require('../models/Field');
-const FarmingCycle = require('../models/FarmingCycle');
-const FinancialRecord = require('../models/FinancialRecord');
-const Budget = require('../models/Budget');
 const Loan = require('../models/Loan');
-const DismissedAlert = require('../models/DismissedAlert');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const { recordAudit } = require('../utils/audit');
+const { planUser, writeArchive, deleteBundle, ensureArchiveReady, RETENTION_DAYS } = require('../utils/archive');
 const {
   sendAccountSuspendedEmail,
   sendAccountReactivatedEmail,
@@ -44,6 +39,7 @@ function toRow(u, membership) {
     type: role || 'individual',
     typeLabel: TYPE_LABEL[role] || 'Individual',
     org: coop && coop.name ? coop.name : null,
+    orgId: coop && coop._id ? String(coop._id) : null,
     status: u.isActive === false ? 'suspended' : 'active',
     statusReason: u.isActive === false ? u.statusReason || null : null,
     statusChangedAt: u.statusChangedAt || null,
@@ -280,9 +276,10 @@ async function requestPasswordReset(req, res) {
 }
 
 // DELETE /api/admin/users/:id
-// Permanent. Refused (deleting nothing) when it would damage a cooperative's
-// books: an owner, or someone with loans. Otherwise removes the account and
-// everything that belongs only to it.
+// Refused (deleting nothing) when it would damage a cooperative's books: an
+// owner (use "Delete cooperative" instead), or someone with loans. Otherwise
+// removes the account and everything that belongs only to it. A full copy is
+// kept in the archive for 30 days, saved in the same transaction as the delete.
 async function deleteUser(req, res) {
   const target = await loadTarget(req.params.id);
   if (String(target._id) === String(req.user._id)) throw ApiError.badRequest("You can't delete your own account");
@@ -294,7 +291,7 @@ async function deleteUser(req, res) {
   if (ownership) {
     const coopName = ownership.cooperative && ownership.cooperative.name;
     throw ApiError.conflict(
-      `${fullName(target)} owns ${coopName ? `"${coopName}"` : 'a cooperative'}, so the account can't be deleted. Suspend it instead.`
+      `${fullName(target)} owns ${coopName ? `"${coopName}"` : 'a cooperative'}, so the account can't be deleted on its own. Use "Delete cooperative" to remove the cooperative and its owner together, or suspend the account instead.`
     );
   }
   const loanCount = await Loan.countDocuments({ farmer: target._id });
@@ -304,33 +301,25 @@ async function deleteUser(req, res) {
     );
   }
 
+  await ensureArchiveReady();
   const session = await mongoose.startSession();
-  let deleted = false;
+  let archived = null;
   try {
     await session.withTransaction(async () => {
-      deleted = false;
-      // The user delete is the gate: only one request can ever succeed.
-      const gone = await User.findOneAndDelete({ _id: target._id, role: { $ne: 'admin' } }, { session });
-      if (!gone) return;
-      const farms = await Farm.find({ owner: target._id }).select('_id').session(session).lean();
-      const farmIds = farms.map((f) => f._id);
-      if (farmIds.length) {
-        const fields = await Field.find({ farm: { $in: farmIds } }).select('_id').session(session).lean();
-        const fieldIds = fields.map((f) => f._id);
-        if (fieldIds.length) await FarmingCycle.deleteMany({ field: { $in: fieldIds } }, { session });
-        await Field.deleteMany({ farm: { $in: farmIds } }, { session });
-        await FinancialRecord.deleteMany({ farm: { $in: farmIds } }, { session });
-        await Budget.deleteMany({ farm: { $in: farmIds } }, { session });
-        await Farm.deleteMany({ owner: target._id }, { session });
-      }
-      await CooperativeMember.deleteMany({ user: target._id }, { session });
-      await DismissedAlert.deleteMany({ user: target._id }, { session });
-      deleted = true;
+      archived = null;
+      const plan = await planUser(target._id, session);
+      if (!plan) return; // already deleted (or an admin, which is never touched)
+      const row = await writeArchive(
+        { kind: 'user', label: plan.label, bundle: plan.bundle, people: plan.people, kept: plan.kept, actor: req.user },
+        session
+      );
+      await deleteBundle(plan.bundle, session);
+      archived = row;
     });
   } finally {
     await session.endSession();
   }
-  if (!deleted) throw ApiError.conflict('This account has already been deleted');
+  if (!archived) throw ApiError.conflict('This account has already been deleted');
 
   let emailSent = false;
   try {
@@ -342,10 +331,10 @@ async function deleteUser(req, res) {
 
   await recordAudit(req.user, 'user.delete', {
     targetType: 'user', targetId: target._id, targetLabel: `${fullName(target)} <${target.email}>`,
-    details: { emailSent },
+    details: { emailSent, archived: true, archiveId: String(archived._id) },
   });
 
-  new ApiResponse(200, { emailSent }, 'Account deleted').send(res);
+  new ApiResponse(200, { emailSent, archiveId: String(archived._id), retentionDays: RETENTION_DAYS }, 'Account deleted').send(res);
 }
 
 module.exports = { listUsers, suspendUser, reactivateUser, updateUser, requestPasswordReset, deleteUser };

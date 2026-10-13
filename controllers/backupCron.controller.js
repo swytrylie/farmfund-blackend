@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const { createBackup } = require('../utils/backup');
+const { purgeExpired } = require('../utils/archive');
 
 // GET /api/cron/backup — called once a day by Vercel's scheduler (see
 // vercel.json). Vercel sends "Authorization: Bearer <CRON_SECRET>" with it;
@@ -17,7 +18,20 @@ async function runScheduledBackup(req, res) {
   }
 
   const backup = await createBackup({ type: 'scheduled', actor: null });
-  new ApiResponse(200, { id: String(backup._id), totalRecords: backup.totalRecords, sizeBytes: backup.sizeBytes }, 'Scheduled backup completed').send(res);
+  // The same nightly visit also empties the archive of anything past its 30 days.
+  // A problem here must never turn a good backup into an error.
+  let purgedArchived = 0;
+  try {
+    purgedArchived = await purgeExpired();
+  } catch (err) {
+    console.error('Archive clean-up failed:', err.message);
+  }
+
+  new ApiResponse(
+    200,
+    { id: String(backup._id), totalRecords: backup.totalRecords, sizeBytes: backup.sizeBytes, purgedArchived },
+    'Scheduled backup completed'
+  ).send(res);
 }
 
 module.exports = { runScheduledBackup };

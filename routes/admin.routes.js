@@ -26,6 +26,15 @@ const { listBackupsRules, backupIdRule, restoreRules } = require('../validators/
 const { getSystem, setMaintenance, updateWindow } = require('../controllers/adminSystem.controller');
 const { maintenanceRules, windowRules } = require('../validators/adminSystem.validator');
 const { listAuditLogsRules } = require('../validators/adminAudit.validator');
+const {
+  getCooperativeImpact,
+  deleteCooperative,
+  listArchive,
+  getArchived,
+  restoreArchived,
+  purgeArchived,
+} = require('../controllers/adminArchive.controller');
+const { cooperativeIdRule, archiveIdRule, deleteCooperativeRules, listArchiveRules } = require('../validators/adminArchive.validator');
 const { userIdRule, listUsersRules, suspendRules, updateUserRules } = require('../validators/adminUsers.validator');
 
 const router = express.Router();
@@ -41,6 +50,13 @@ router.patch('/users/:id/reactivate', userIdRule, handleValidationErrors, asyncH
 router.post('/users/:id/password-reset', userIdRule, handleValidationErrors, asyncHandler(requestPasswordReset));
 router.patch('/users/:id', updateUserRules, handleValidationErrors, asyncHandler(updateUser));
 router.delete('/users/:id', userIdRule, handleValidationErrors, asyncHandler(deleteUser));
+
+router.get('/cooperatives/:id/impact', cooperativeIdRule, handleValidationErrors, asyncHandler(getCooperativeImpact));
+router.delete('/cooperatives/:id', deleteCooperativeRules, handleValidationErrors, asyncHandler(deleteCooperative));
+router.get('/archive', listArchiveRules, handleValidationErrors, asyncHandler(listArchive));
+router.get('/archive/:id', archiveIdRule, handleValidationErrors, asyncHandler(getArchived));
+router.post('/archive/:id/restore', archiveIdRule, handleValidationErrors, asyncHandler(restoreArchived));
+router.delete('/archive/:id', archiveIdRule, handleValidationErrors, asyncHandler(purgeArchived));
 
 router.get('/audit-logs', listAuditLogsRules, handleValidationErrors, asyncHandler(listAuditLogs));
 router.get('/farms', listFarmsRules, handleValidationErrors, asyncHandler(listFarms));

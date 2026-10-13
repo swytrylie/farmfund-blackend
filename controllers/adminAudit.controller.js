@@ -9,6 +9,11 @@ const ACTION_TEXT = {
   'user.update': 'Updated account details',
   'user.password_reset_request': 'Sent password reset email',
   'user.delete': 'Deleted account',
+  'user.restore': 'Restored account from the archive',
+  'user.purge': 'Permanently deleted an archived account',
+  'cooperative.delete': 'Deleted cooperative',
+  'cooperative.restore': 'Restored cooperative from the archive',
+  'cooperative.purge': 'Permanently deleted an archived cooperative',
   'cooperative.approve': 'Approved cooperative',
   'cooperative.reject': 'Declined cooperative',
   'financial.access_granted': 'Opened a farmer\'s financial records',
@@ -81,6 +86,24 @@ function detailText(action, details) {
   }
   if (action === 'backup.restore_failed') {
     parts.push(d.rolledBack ? 'Data was put back as it was before' : 'The automatic undo also failed — a safety backup is available');
+  }
+
+  if (action === 'cooperative.delete') {
+    const c = d.counts && typeof d.counts === 'object' ? d.counts : {};
+    const bits = [];
+    if (typeof d.accountsDeleted === 'number') bits.push(`${d.accountsDeleted} account${d.accountsDeleted === 1 ? '' : 's'}`);
+    if (c.Loan) bits.push(`${c.Loan} loan${c.Loan === 1 ? '' : 's'}`);
+    if (c.LoanPayment) bits.push(`${c.LoanPayment} payment${c.LoanPayment === 1 ? '' : 's'}`);
+    parts.push(bits.length ? `Removed ${bits.join(', ')}` : 'Removed the cooperative');
+    parts.push('Kept in the archive for 30 days');
+    if (d.emailsFailed) parts.push(`${d.emailsFailed} notice email${d.emailsFailed === 1 ? '' : 's'} couldn't be sent`);
+  }
+  if (action === 'user.delete' && d.archived) parts.push('Kept in the archive for 30 days');
+  if (action === 'cooperative.restore' || action === 'user.restore') {
+    if (d.skipped) parts.push(`${d.skipped} item${d.skipped === 1 ? ' was' : 's were'} left out because something they belong to no longer exists`);
+  }
+  if (action === 'cooperative.purge' || action === 'user.purge') {
+    parts.push(d.auto ? 'Removed automatically after 30 days' : 'Removed before the 30 days were up');
   }
 
   if (action === 'certificate.reject' && d.note) parts.push(`Reason: ${d.note}`);
