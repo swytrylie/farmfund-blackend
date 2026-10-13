@@ -21,6 +21,8 @@ const ACTION_TEXT = {
   'system.maintenance_on': 'Turned maintenance mode on',
   'system.maintenance_off': 'Turned maintenance mode off',
   'system.maintenance_window': 'Changed the maintenance window',
+  'certificate.verify': 'Verified a certificate',
+  'certificate.reject': 'Rejected a certificate',
 };
 
 function manilaRange(startIso, endIso) {
@@ -80,6 +82,9 @@ function detailText(action, details) {
   if (action === 'backup.restore_failed') {
     parts.push(d.rolledBack ? 'Data was put back as it was before' : 'The automatic undo also failed — a safety backup is available');
   }
+
+  if (action === 'certificate.reject' && d.note) parts.push(`Reason: ${d.note}`);
+  if (action === 'certificate.verify' && d.note) parts.push(`Note: ${d.note}`);
 
   if (action === 'system.maintenance_on') parts.push('Farmers and cooperatives are blocked until it is turned off');
   if (action === 'system.maintenance_window') {
