@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
 
     isEmailVerified: { type: Boolean },
 
+    // Consent to the Terms and Conditions / data-privacy notice, recorded at
+    // sign-up: when it was given and which version of the text was shown.
+    // Accounts created before this existed have neither field.
+    termsAcceptedAt: { type: Date },
+    termsVersion: { type: String, trim: true, maxlength: 20 },
+
     // One-time-code fields — shared by signup verification, password-change
     // verification and email-change verification, told apart by otpPurpose so
     // a code for one can never confirm another. All select: false: short-lived,

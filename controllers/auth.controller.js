@@ -7,6 +7,7 @@ const CooperativeMember = require('../models/CooperativeMember');
 const { sendOtpEmail, sendEmailChangedNotice } = require('../utils/mailer');
 const { recordLoginEvent } = require('../utils/loginEvents');
 const { buildOtp, issueOtp, releaseCooldown, checkAndConsumeOtp } = require('../utils/otp');
+const { consentFields } = require('../utils/terms');
 
 // Shared by login() and getMe() — a User's role is only ever "user" or
 // "admin"; organization membership lives entirely in CooperativeMember, a
@@ -122,6 +123,8 @@ async function restartPendingSignup(userId, req, res) {
       user.lastName = lastName;
       user.phone = phone;
       user.passwordHash = passwordHash;
+      // They just agreed to the Terms again on this attempt, so record that one.
+      Object.assign(user, consentFields(req.body));
       await user.save({ session });
 
       const membership = await CooperativeMember.findOne({ user: userId, role: 'owner' }).session(session);
@@ -213,7 +216,7 @@ async function register(req, res) {
   try {
     await session.withTransaction(async () => {
       const created = await User.create(
-        [{ _id: userId, firstName, lastName, email, passwordHash, phone, isEmailVerified: false, ...otpFields }],
+        [{ _id: userId, firstName, lastName, email, passwordHash, phone, isEmailVerified: false, ...consentFields(req.body), ...otpFields }],
         { session }
       );
       user = created[0];
