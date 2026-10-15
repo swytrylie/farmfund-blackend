@@ -25,7 +25,7 @@ const loanPaymentSchema = new mongoose.Schema(
     paymentDate: { type: Date, required: true, default: Date.now },
     method: {
       type: String,
-      enum: ['cash', 'bank_transfer', 'mobile_wallet', 'other'],
+      enum: ['cash', 'bank_transfer', 'gcash', 'maya', 'mobile_wallet', 'other'],
       default: 'cash',
     },
     recordedBy: {

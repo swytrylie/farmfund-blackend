@@ -1,6 +1,6 @@
 const { body, query } = require('express-validator');
 
-const METHODS = ['cash', 'bank_transfer', 'mobile_wallet', 'other'];
+const METHODS = ['cash', 'bank_transfer', 'gcash', 'maya', 'mobile_wallet', 'other'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const listLoanPaymentsRules = [

@@ -3,6 +3,7 @@
 // address, and the only way to open one is a link we sign that stops working
 // after a few minutes.
 const FOLDER = 'farmfund/certificates';
+const PROOF_FOLDER = 'farmfund/payment-proofs';
 const LINK_SECONDS = 300;
 
 function isConfigured(env = process.env) {
@@ -21,11 +22,11 @@ function client() {
 }
 
 // Sends the file's bytes to Cloudinary. Resolves { publicId, format, bytes }.
-function uploadBuffer(buffer) {
+function uploadBuffer(buffer, folder = FOLDER) {
   const cloud = client();
   return new Promise((resolve, reject) => {
     const stream = cloud.uploader.upload_stream(
-      { resource_type: 'image', type: 'private', folder: FOLDER, unique_filename: true, overwrite: false },
+      { resource_type: 'image', type: 'private', folder, unique_filename: true, overwrite: false },
       (err, result) => {
         if (err) return reject(err);
         if (!result || !result.public_id) return reject(new Error('Cloudinary returned no file reference'));
@@ -52,9 +53,9 @@ async function destroy(publicId) {
     await client().uploader.destroy(publicId, { resource_type: 'image', type: 'private', invalidate: true });
     return true;
   } catch (err) {
-    console.error('Could not delete certificate file from Cloudinary:', err && err.message);
+    console.error('Could not delete a file from Cloudinary:', err && err.message);
     return false;
   }
 }
 
-module.exports = { isConfigured, uploadBuffer, signedLink, destroy, LINK_SECONDS, FOLDER };
+module.exports = { isConfigured, uploadBuffer, signedLink, destroy, LINK_SECONDS, FOLDER, PROOF_FOLDER };

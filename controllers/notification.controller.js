@@ -21,7 +21,11 @@ function toRow(n) {
       dueNote: d.dueNote || null,
       contactEmail: d.contactEmail || null,
       contactPhone: d.contactPhone || null,
+      farmerName: d.farmerName || null,
+      amount: typeof d.amount === 'number' ? d.amount : null,
+      methodLabel: d.methodLabel || null,
     },
+    proofId: n.paymentProof ? String(n.paymentProof) : null,
   };
 }
 

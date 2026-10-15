@@ -1,11 +1,10 @@
-const mongoose = require('mongoose');
 const LoanPayment = require('../models/LoanPayment');
 const Loan = require('../models/Loan');
 const CooperativeMember = require('../models/CooperativeMember');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const { assertCooperativeStaffOrAdmin } = require('../utils/cooperativeMembership');
-const { round2, totalPayable } = require('../utils/loanBalance');
+const { recordLoanPayment } = require('../utils/recordLoanPayment');
 
 // Same viewing rule as loans themselves: an admin, the farmer who
 // borrowed, or any active member of the lending cooperative.
@@ -23,13 +22,12 @@ async function assertCanViewLoan(loan, user) {
   if (!membership) throw ApiError.forbidden('You do not have access to this resource');
 }
 
-const ACTIVE_LIKE = ['active', 'defaulted']; // payments still make sense on these
-
 // POST /api/loan-payments
 // Records money the cooperative has actually received on a loan. Only the
 // LENDING cooperative's owner or finance_manager (or an admin) may do
 // this — never the borrower, who could otherwise "pay" their own loan
-// down by simply claiming they did.
+// down by simply claiming they did. (A farmer who has paid sends proof
+// instead — see paymentProof.controller.js — and staff verify it.)
 async function createLoanPayment(req, res) {
   const { loan: loanId, amount, method, paymentDate } = req.body;
 
@@ -38,54 +36,13 @@ async function createLoanPayment(req, res) {
 
   await assertCooperativeStaffOrAdmin(loan.cooperative, req.user);
 
-  const session = await mongoose.startSession();
-  let payment, amountPaid, remainingBalance, loanStatus;
-
-  try {
-    await session.withTransaction(async () => {
-      // Everything below is read and written inside one transaction, and
-      // the loan document is always written to at the end — so two
-      // payments recorded at the same instant conflict with each other
-      // and one retries against the other's result, instead of both
-      // checking "does this fit?" against the same stale total and
-      // together overpaying the loan.
-      const fresh = await Loan.findById(loan._id).session(session);
-      if (!ACTIVE_LIKE.includes(fresh.status)) {
-        throw ApiError.badRequest(`Payments can only be recorded on active loans (this loan is ${fresh.status})`);
-      }
-
-      const payable = totalPayable(fresh);
-      const sums = await LoanPayment.aggregate([
-        { $match: { loan: fresh._id } },
-        { $group: { _id: null, paid: { $sum: '$amount' } } },
-      ]).session(session);
-      const paidBefore = round2(sums[0]?.paid || 0);
-      const remainingBefore = round2(payable - paidBefore);
-
-      if (amount > remainingBefore + 0.001) {
-        throw ApiError.badRequest(`This payment is more than the remaining balance of ₱${remainingBefore.toFixed(2)}`);
-      }
-
-      const created = await LoanPayment.create(
-        [{ loan: fresh._id, amount, method, paymentDate, recordedBy: req.user._id }],
-        { session }
-      );
-      payment = created[0];
-
-      amountPaid = round2(paidBefore + amount);
-      remainingBalance = Math.max(0, round2(payable - amountPaid));
-      const paidOff = remainingBalance <= 0.001;
-      loanStatus = paidOff ? 'paid_off' : fresh.status;
-
-      await Loan.updateOne(
-        { _id: fresh._id },
-        { $set: { updatedAt: new Date(), ...(paidOff ? { status: 'paid_off' } : {}) } },
-        { session }
-      );
-    });
-  } finally {
-    await session.endSession();
-  }
+  const { payment, loanStatus, amountPaid, remainingBalance } = await recordLoanPayment({
+    loanId: loan._id,
+    amount,
+    method,
+    paymentDate,
+    recordedBy: req.user._id,
+  });
 
   new ApiResponse(201, { payment, loanStatus, amountPaid, remainingBalance }, 'Payment recorded successfully').send(res);
 }

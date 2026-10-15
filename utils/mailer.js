@@ -129,6 +129,41 @@ async function sendReminderEmail({
   );
 }
 
+// Sent to a cooperative's finance staff when a farmer uploads a proof of
+// payment. Every fact comes from the saved proof and loan on the server; the
+// farmer's name, reference number and note are typed by people, so they are
+// escaped here. The email never contains the receipt itself — staff open it
+// inside FarmFund, where only they can see it.
+async function sendPaymentProofEmail({ to, firstName, coopName, farmerName, loanRef, amount, methodLabel, paymentDate, referenceNumber, note, appUrl }) {
+  const row = (label, value) =>
+    `<tr><td style="padding: 6px 0; color: #666;">${label}</td><td style="padding: 6px 0; text-align: right;"><strong>${value}</strong></td></tr>`;
+  const rows = [
+    row('Farmer', escapeHtml(farmerName)),
+    row('Loan', escapeHtml(loanRef)),
+    row('Amount paid', formatPeso(amount)),
+    row('Payment method', escapeHtml(methodLabel)),
+    row('Payment date', formatDate(paymentDate)),
+    referenceNumber ? row('Reference no.', escapeHtml(referenceNumber)) : '',
+  ].join('');
+  const noteLine = note ? `<p style="color: #444; font-size: 14px;">Their note: ${escapeHtml(note).replace(/\r?\n/g, '<br>')}</p>` : '';
+  const link = appUrl
+    ? `<p><a href="${escapeHtml(appUrl)}" style="color: #2d4027;">Open FarmFund</a> and go to <strong>Repayment Tracking</strong> to view the proof.</p>`
+    : '<p>Open FarmFund and go to <strong>Repayment Tracking</strong> to view the proof.</p>';
+
+  const subject = `Payment proof from ${farmerName} — ${coopName}`.replace(/[\r\n]+/g, ' ');
+  await sendEmail(
+    to,
+    subject,
+    wrapEmail(`
+        <h2 style="color: #2d4027;">A payment proof needs your review</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>${escapeHtml(farmerName)} says they paid ${escapeHtml(coopName)} and uploaded a receipt. The loan balance does not change until you verify it.</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">${rows}</table>
+        ${noteLine}
+        ${link}`)
+  );
+}
+
 // Sent to the OLD address right after the account's email is changed, so a
 // change the owner didn't make cannot go unnoticed. Both addresses are typed
 // by people, so both are escaped. The link goes to a page with a button — it
@@ -302,7 +337,7 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 }
 
 module.exports = {
-  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendEmailChangedNotice,
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
   sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,

@@ -4,8 +4,9 @@ const mongoose = require('mongoose');
  * Notification
  * ------------
  * A message that lands in ONE person's notification bell and Alerts page.
- * Right now the only kind is a payment reminder a cooperative sent to a
- * borrower; the email that goes with it is a separate thing.
+ * Two kinds: a payment reminder a cooperative sent to a borrower, and a
+ * heads-up to a cooperative's finance staff that a farmer sent a proof of
+ * payment to check. The email that goes with either is a separate thing.
  *
  * - user is the only person who can ever see it (the routes filter on it).
  * - details is a snapshot of the facts at the time it was sent (what was owed,
@@ -16,7 +17,7 @@ const mongoose = require('mongoose');
 const notificationSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['payment_reminder'], required: true },
+    kind: { type: String, enum: ['payment_reminder', 'payment_proof_submitted'], required: true },
     title: { type: String, required: true, trim: true, maxlength: 200 },
     message: { type: String, required: true, trim: true, maxlength: 200 },
     details: {
@@ -28,9 +29,14 @@ const notificationSchema = new mongoose.Schema(
       dueNote: { type: String, trim: true, maxlength: 100 },
       contactEmail: { type: String, trim: true, maxlength: 200 },
       contactPhone: { type: String, trim: true, maxlength: 50 },
+      // payment_proof_submitted only
+      farmerName: { type: String, trim: true, maxlength: 200 },
+      amount: { type: Number },
+      methodLabel: { type: String, trim: true, maxlength: 50 },
     },
     loan: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan' },
     cooperative: { type: mongoose.Schema.Types.ObjectId, ref: 'Cooperative' },
+    paymentProof: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentProof' },
     readAt: { type: Date },
   },
   { timestamps: true }
