@@ -26,6 +26,7 @@ function toRow(n) {
       methodLabel: d.methodLabel || null,
     },
     proofId: n.paymentProof ? String(n.paymentProof) : null,
+    certificateId: n.certificate ? String(n.certificate) : null,
   };
 }
 

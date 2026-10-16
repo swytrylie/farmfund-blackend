@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const { assertCooperativeStaffOrAdmin } = require('../utils/cooperativeMembership');
 const { round2, totalPayable, addMonths } = require('../utils/loanBalance');
+const { creditFor } = require('../utils/creditLimit');
 
 // Loan is owned DIRECTLY by farmer (unlike Budget/FinancialRecord, which
 // are owned indirectly through Farm) — so this checks loan.farmer, not a
@@ -70,12 +71,32 @@ async function loadSerializedLoan(id) {
 // simply including "status": "active" in their request. Only a
 // cooperative's staff or an admin (via updateLoanStatus below) can move a
 // loan past pending.
+const formatPeso = (n) => '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
 async function createLoan(req, res) {
   const { cooperative, principalAmount, interestRatePercent, termMonths } = req.body;
 
   const coopDoc = await Cooperative.findById(cooperative);
   if (!coopDoc || coopDoc.status !== 'active') {
     throw ApiError.badRequest('Invalid or inactive cooperative');
+  }
+
+  // A farmer can only borrow up to their credit limit, which comes from a
+  // verified Barangay Certificate (PHP 0 until one is verified).
+  const before = await creditFor(req.user._id);
+  if (before.limit <= 0) {
+    throw ApiError.forbidden(
+      before.barangayStatus === 'pending'
+        ? 'Your Barangay Certificate is still waiting to be verified. You can request a loan once it is verified.'
+        : 'You can request a loan after your Barangay Certificate is verified. Upload it in your farm profile under Certificates.'
+    );
+  }
+  if (principalAmount > before.available + 0.001) {
+    throw ApiError.badRequest(
+      before.available > 0
+        ? `That is more than your available credit. You can borrow up to ${formatPeso(before.available)} right now.`
+        : `You have no credit left. Your limit of ${formatPeso(before.limit)} is fully used by your other loans.`
+    );
   }
 
   const loan = await Loan.create({
@@ -86,6 +107,14 @@ async function createLoan(req, res) {
     termMonths,
     status: 'pending', // forced, regardless of what the client sent
   });
+
+  // Two requests sent at the same moment could both pass the check above.
+  // Look again now that this one exists, and take it back if the farmer went over.
+  const after = await creditFor(req.user._id);
+  if (after.used > after.limit + 0.001) {
+    await Loan.deleteOne({ _id: loan._id });
+    throw ApiError.badRequest('You have another loan request in progress. Please check your available credit and try again.');
+  }
 
   new ApiResponse(201, await loadSerializedLoan(loan._id), 'Loan request submitted successfully').send(res);
 }

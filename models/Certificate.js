@@ -12,6 +12,11 @@ const mongoose = require('mongoose');
 const certificateSchema = new mongoose.Schema(
   {
     farmer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // What kind of document this is. Only a verified barangay_certificate
+    // raises the farmer's credit limit; income_certificate is supporting
+    // evidence; 'other' is everything else (and every certificate uploaded
+    // before types existed).
+    type: { type: String, enum: ['barangay_certificate', 'income_certificate', 'other'], default: 'other' },
     title: { type: String, required: true, trim: true, maxlength: 100 },
     issuer: { type: String, trim: true, maxlength: 100 },
     issuedOn: { type: Date },

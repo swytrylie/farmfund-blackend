@@ -1,4 +1,4 @@
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 
 const noAngles = (v) => !/[<>]/.test(v);
 
@@ -6,8 +6,16 @@ const idRule = [param('id').isMongoId().withMessage('A valid certificate id is r
 const farmerIdRule = [param('farmerId').isMongoId().withMessage('A valid farmer id is required')];
 
 // These run AFTER the file has been received, so the text fields are filled in.
+const TYPES = ['barangay_certificate', 'income_certificate', 'other'];
+
 const createRules = [
+  body('type')
+    .optional({ values: 'falsy' })
+    .isIn(TYPES).withMessage('Choose a valid document type'),
+  // A Barangay or Income certificate gets its title from its type, so the
+  // farmer only has to type one for "other" documents.
   body('title')
+    .if((v, { req }) => !req.body || !['barangay_certificate', 'income_certificate'].includes(req.body.type))
     .isString().withMessage('Enter a title for the certificate')
     .bail()
     .trim()
@@ -46,4 +54,13 @@ const reviewRules = [
   }),
 ];
 
-module.exports = { idRule, farmerIdRule, createRules, reviewRules };
+// The admin's review queue: GET /api/certificates/queue
+const queueRules = [
+  query('status').optional().isIn(['pending', 'verified', 'rejected', 'all']).withMessage('Invalid status'),
+  query('type').optional().isIn([...TYPES, 'all']).withMessage('Invalid document type'),
+  query('search').optional().isString().isLength({ max: 100 }).withMessage('The search is too long'),
+  query('page').optional().isInt({ min: 1, max: 100000 }).withMessage('Invalid page').toInt(),
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Invalid limit').toInt(),
+];
+
+module.exports = { idRule, farmerIdRule, createRules, reviewRules, queueRules, TYPES };
