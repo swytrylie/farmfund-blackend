@@ -46,10 +46,22 @@ const loanSchema = new mongoose.Schema(
         originalName: { type: String, trim: true, maxlength: 200 },
       },
     },
+    // pending_admin = a new request waiting for a FarmFund admin to check the
+    // collateral proof (the cooperative cannot see it yet). Verified -> pending
+    // (now with the cooperative). Not verified -> admin_rejected (never sent).
     status: {
       type: String,
-      enum: ['pending', 'approved', 'active', 'paid_off', 'defaulted', 'rejected'],
+      enum: ['pending_admin', 'admin_rejected', 'pending', 'approved', 'active', 'paid_off', 'defaulted', 'rejected'],
       default: 'pending',
+    },
+    // The admin's check of the collateral proof. Missing on older loans, which
+    // went straight to their cooperative.
+    adminReview: {
+      status: { type: String, enum: ['pending', 'verified', 'rejected'] },
+      note: { type: String, trim: true, maxlength: 300 },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      reviewedByName: { type: String, trim: true, maxlength: 200 },
+      reviewedAt: { type: Date },
     },
     issuedDate: { type: Date },
     dueDate: { type: Date },
@@ -59,6 +71,7 @@ const loanSchema = new mongoose.Schema(
 
 loanSchema.index({ farmer: 1 });
 loanSchema.index({ cooperative: 1 });
+loanSchema.index({ status: 1, createdAt: 1 });
 
 // Virtual populate: loan.payments -> all LoanPayment docs referencing this loan
 loanSchema.virtual('payments', {

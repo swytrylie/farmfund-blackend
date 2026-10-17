@@ -17,7 +17,10 @@ const mongoose = require('mongoose');
  *   the email said.
  * - readAt is empty until the borrower opens it.
  */
-const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified'];
+// loan_submitted: to the admins, a farmer's loan request needs its collateral checked.
+// loan_update: to a farmer, news about their loan (verified, not verified, ...).
+// loan_alert: to a cooperative's owner / finance managers, news about a loan of theirs.
+const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified', 'loan_submitted', 'loan_update', 'loan_alert'];
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -38,6 +41,8 @@ const notificationSchema = new mongoose.Schema(
       farmerName: { type: String, trim: true, maxlength: 200 },
       amount: { type: Number },
       methodLabel: { type: String, trim: true, maxlength: 50 },
+      // loan notices: why a request was not verified, what the loan is for
+      reason: { type: String, trim: true, maxlength: 300 },
     },
     loan: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan' },
     cooperative: { type: mongoose.Schema.Types.ObjectId, ref: 'Cooperative' },

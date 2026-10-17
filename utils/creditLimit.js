@@ -22,7 +22,7 @@ const { totalPayable } = require('./loanBalance');
  * on yet uses its full principal.
  */
 const VERIFIED_LIMIT = 25000;
-const OPEN_STATUSES = ['pending', 'approved', 'active', 'defaulted'];
+const OPEN_STATUSES = ['pending_admin', 'pending', 'approved', 'active', 'defaulted'];
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 

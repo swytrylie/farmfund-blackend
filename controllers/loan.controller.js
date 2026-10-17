@@ -10,6 +10,16 @@ const { creditFor } = require('../utils/creditLimit');
 const storage = require('../utils/cloudinary');
 const { sniff } = require('../utils/fileSniff');
 const { CROPS, COLLATERAL, growingDaysFor, rateFor, termMonthsFor, dueDateFor, options } = require('../utils/loanTerms');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+const { recordAudit } = require('../utils/audit');
+const { tellAdminsNewRequest, tellFarmerVerified, tellFarmerRejected, tellCoopStaffRequest, fullName } = require('../utils/loanNotices');
+
+// A new request waits here for an admin to check its collateral. Until it is
+// verified the cooperative cannot see it, and if it is not verified it never
+// reaches them.
+const ADMIN_STAGE = ['pending_admin', 'admin_rejected'];
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Loan is owned DIRECTLY by farmer (unlike Budget/FinancialRecord, which
 // are owned indirectly through Farm) — so this checks loan.farmer, not a
@@ -24,6 +34,8 @@ const { CROPS, COLLATERAL, growingDaysFor, rateFor, termMonthsFor, dueDateFor, o
 async function assertCanViewLoan(loan, user) {
   if (user.role === 'admin') return;
   if (String(loan.farmer?._id || loan.farmer) === String(user._id)) return;
+  // Still with the admin (or not verified): the cooperative must not even know it exists.
+  if (ADMIN_STAGE.includes(loan.status)) throw ApiError.notFound('Loan not found');
 
   const membership = await CooperativeMember.findOne({
     cooperative: loan.cooperative?._id || loan.cooperative,
@@ -49,6 +61,13 @@ function publicCollateral(c) {
   };
 }
 
+// What the farmer, the admin and (once verified) the cooperative may read about
+// the admin's check: the outcome, the reason, who and when — never an id.
+function publicAdminReview(r) {
+  if (!r || !r.status) return null;
+  return { status: r.status, note: r.note || null, reviewedByName: r.reviewedByName || null, reviewedAt: r.reviewedAt || null };
+}
+
 // Adds totalPayable / amountPaid / remainingBalance to plain loan objects,
 // using ONE aggregate over the payments of every loan in the batch rather
 // than a query per loan. Computed here, on the server, so every page that
@@ -71,6 +90,7 @@ async function attachBalances(loans) {
       rateBasis: l.rateBasis || 'annual',
       cropLabel: l.crop && CROPS[l.crop] ? CROPS[l.crop].label : null,
       collateral: publicCollateral(l.collateral),
+      adminReview: publicAdminReview(l.adminReview),
       totalPayable: payable,
       amountPaid: paid,
       remainingBalance: round2(Math.max(0, payable - paid)),
@@ -93,11 +113,11 @@ async function loadSerializedLoan(id) {
 
 // POST /api/loans
 // A farmer REQUESTS a loan — this does not create an active loan. status is
-// ALWAYS forced to 'pending' here, ignoring anything sent in the request
+// ALWAYS forced to 'pending_admin' here, ignoring anything sent in the request
 // body, so a farmer can never grant themselves an approved/active loan by
 // simply including "status": "active" in their request. Only a
 // cooperative's staff or an admin (via updateLoanStatus below) can move a
-// loan past pending.
+// loan past pending, and only after an admin verified its collateral.
 const formatPeso = (n) => '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 async function createLoan(req, res) {
@@ -167,7 +187,8 @@ async function createLoan(req, res) {
           originalName: rawName.replace(/[<>\r\n]/g, '').slice(0, 200) || undefined,
         },
       },
-      status: 'pending', // forced, regardless of what the client sent
+      status: 'pending_admin', // forced: an admin checks the collateral before the cooperative sees it
+      adminReview: { status: 'pending' },
     });
   } catch (err) {
     await storage.destroy(stored.publicId); // do not leave a file nobody points to
@@ -183,7 +204,9 @@ async function createLoan(req, res) {
     throw ApiError.badRequest('You have another loan request in progress. Please check your available credit and try again.');
   }
 
-  new ApiResponse(201, await loadSerializedLoan(loan._id), 'Loan request submitted successfully').send(res);
+  await tellAdminsNewRequest(loan, req.user);
+
+  new ApiResponse(201, await loadSerializedLoan(loan._id), 'Loan request submitted. An admin will verify your collateral first, then it goes to your cooperative.').send(res);
 }
 
 // GET /api/loans/options — the crops (with growing times) and collateral types
@@ -201,7 +224,7 @@ async function collateralLink(req, res) {
   let allowed = false;
   if (loan && loan.collateral && loan.collateral.file && loan.collateral.file.publicId) {
     if (req.user.role === 'admin' || String(loan.farmer) === String(req.user._id)) allowed = true;
-    else {
+    else if (!ADMIN_STAGE.includes(loan.status)) {
       const staff = await CooperativeMember.findOne({
         cooperative: loan.cooperative,
         user: req.user._id,
@@ -242,11 +265,14 @@ async function getLoans(req, res) {
     const membership = await CooperativeMember.findOne({ user: req.user._id, status: 'active' });
     if (membership) {
       filter.cooperative = membership.cooperative;
+      // Requests still with the admin are not the cooperative's to see yet.
+      if (status && ADMIN_STAGE.includes(status)) filter.status = { $in: [] };
+      else if (!status) filter.status = { $nin: ADMIN_STAGE };
     } else {
       filter.farmer = req.user._id;
     }
   }
-  if (status) filter.status = status;
+  if (status && !filter.status) filter.status = status;
 
   const [loans, total] = await Promise.all([
     Loan.find(filter)
@@ -288,8 +314,18 @@ async function getLoanById(req, res) {
 async function updateLoanStatus(req, res) {
   const loan = await Loan.findById(req.params.id);
   if (!loan) throw ApiError.notFound('Loan not found');
+  // The cooperative cannot see a request that is still with the admin.
+  if (ADMIN_STAGE.includes(loan.status) && req.user.role !== 'admin') throw ApiError.notFound('Loan not found');
 
   await assertCooperativeStaffOrAdmin(loan.cooperative, req.user);
+
+  if (ADMIN_STAGE.includes(loan.status)) {
+    throw ApiError.badRequest(
+      loan.status === 'pending_admin'
+        ? 'This request is waiting for its collateral to be verified. Verify it first.'
+        : 'This request was not verified and was never sent to the cooperative'
+    );
+  }
 
   // paid_off now means "the balance genuinely reached zero", which only
   // recorded payments can establish — not something to set by hand, or a
@@ -324,4 +360,110 @@ async function updateLoanStatus(req, res) {
   new ApiResponse(200, await loadSerializedLoan(loan._id), 'Loan status updated successfully').send(res);
 }
 
-module.exports = { createLoan, getLoans, getLoanById, updateLoanStatus, loanOptions, collateralLink };
+const REVIEW_LABEL = { pending: 'Waiting for verification', verified: 'Verified', rejected: 'Not verified' };
+
+function toQueueRow(l, farmer) {
+  return {
+    id: String(l._id),
+    farmer: { id: String(l.farmer), name: farmer ? fullName(farmer) : 'Deleted account', email: farmer ? farmer.email : null },
+    cooperative: { id: l.cooperative ? String(l.cooperative._id || l.cooperative) : null, name: l.cooperative && l.cooperative.name ? l.cooperative.name : 'Unknown cooperative' },
+    principalAmount: l.principalAmount,
+    interestRatePercent: l.interestRatePercent,
+    cropLabel: l.crop && CROPS[l.crop] ? CROPS[l.crop].label : null,
+    growingDays: l.growingDays || null,
+    collateral: publicCollateral(l.collateral),
+    review: publicAdminReview(l.adminReview),
+    reviewLabel: REVIEW_LABEL[l.adminReview && l.adminReview.status] || null,
+    loanStatus: l.status, // what became of it afterwards (the cooperative's decision)
+    createdAt: l.createdAt,
+  };
+}
+
+// GET /api/loans/admin/queue?status=&search=&page=&limit= — admin only.
+// Every request that came through the collateral check, oldest waiting first.
+async function adminQueue(req, res) {
+  if (req.user.role !== 'admin') throw ApiError.forbidden('Only the FarmFund admin can verify loan collateral');
+  const status = req.query.status || 'pending';
+  const search = typeof req.query.search === 'string' ? req.query.search : '';
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 20;
+
+  const filter = status === 'all' ? { 'adminReview.status': { $exists: true } } : { 'adminReview.status': status };
+
+  const terms = search.trim().split(/\s+/).filter(Boolean).slice(0, 5);
+  if (terms.length) {
+    const and = terms.map((t) => {
+      const rx = new RegExp(escapeRegex(t), 'i');
+      return { $or: [{ firstName: rx }, { lastName: rx }, { email: rx }] };
+    });
+    const people = await User.find({ $and: and }).select('_id').lean();
+    filter.farmer = { $in: people.map((p) => p._id) };
+  }
+
+  const order = status === 'pending' ? 1 : -1;
+  const [total, pendingCount, rows] = await Promise.all([
+    Loan.countDocuments(filter),
+    Loan.countDocuments({ 'adminReview.status': 'pending' }),
+    Loan.find(filter).populate('cooperative', 'name').sort({ createdAt: order, _id: order }).skip((page - 1) * limit).limit(limit).lean(),
+  ]);
+  const farmers = rows.length ? await User.find({ _id: { $in: rows.map((r) => r.farmer) } }).select('firstName lastName email').lean() : [];
+  const byId = new Map(farmers.map((f) => [String(f._id), f]));
+
+  new ApiResponse(
+    200,
+    { loans: rows.map((l) => toQueueRow(l, byId.get(String(l.farmer)))), total, pendingCount, page, pages: Math.max(1, Math.ceil(total / limit)) },
+    'Loan requests fetched'
+  ).send(res);
+}
+
+// PATCH /api/loans/:id/admin-review  { status: 'verified'|'rejected', note } — admin only.
+// Verified: the request goes to the cooperative the farmer chose. Not verified:
+// it ends here. It can only be decided once, and two admins clicking at the same
+// moment cannot both decide it.
+async function adminReview(req, res) {
+  if (req.user.role !== 'admin') throw ApiError.forbidden('Only the FarmFund admin can verify loan collateral');
+  const verified = req.body.status === 'verified';
+  const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
+
+  const set = {
+    status: verified ? 'pending' : 'admin_rejected',
+    'adminReview.status': verified ? 'verified' : 'rejected',
+    'adminReview.reviewedBy': req.user._id,
+    'adminReview.reviewedByName': fullName(req.user),
+    'adminReview.reviewedAt': new Date(),
+  };
+  if (note) set['adminReview.note'] = note;
+  const update = note ? { $set: set } : { $set: set, $unset: { 'adminReview.note': '' } };
+
+  const done = await Loan.findOneAndUpdate({ _id: req.params.id, status: 'pending_admin', 'adminReview.status': 'pending' }, update, { new: true }).lean();
+  if (!done) {
+    const exists = await Loan.findById(req.params.id).select('status adminReview').lean();
+    if (!exists || !exists.adminReview || !exists.adminReview.status) throw ApiError.notFound('Loan request not found');
+    throw ApiError.conflict(`This request was already ${exists.adminReview.status === 'verified' ? 'verified' : 'rejected'}.`);
+  }
+
+  // Decided, so the "to verify" alert is done with for every admin.
+  await Notification.updateMany({ loan: done._id, kind: 'loan_submitted', readAt: { $exists: false } }, { $set: { readAt: new Date() } }).catch(() => {});
+
+  const [farmer, coop] = await Promise.all([
+    User.findById(done.farmer).select('firstName lastName email').lean(),
+    Cooperative.findById(done.cooperative).select('name').lean(),
+  ]);
+  await recordAudit(req.user, verified ? 'loan.collateral.verify' : 'loan.collateral.reject', {
+    targetType: 'loan',
+    targetId: done._id,
+    targetLabel: `${fullName(farmer)} — ${formatPeso(done.principalAmount)}`,
+    details: { cooperative: coop ? coop.name : undefined, note: note || undefined },
+  });
+
+  if (verified) {
+    await tellFarmerVerified(done, farmer, coop);
+    await tellCoopStaffRequest(done, farmer, coop);
+  } else {
+    await tellFarmerRejected(done, farmer, note);
+  }
+
+  new ApiResponse(200, { loan: toQueueRow({ ...done, cooperative: { _id: done.cooperative, name: coop && coop.name } }, farmer) }, verified ? 'Collateral verified. The request went to the cooperative.' : 'Loan request not verified').send(res);
+}
+
+module.exports = { createLoan, getLoans, getLoanById, updateLoanStatus, loanOptions, collateralLink, adminQueue, adminReview };

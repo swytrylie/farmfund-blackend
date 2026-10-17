@@ -188,6 +188,70 @@ async function sendCertificateVerifiedEmail({ to, firstName, label, creditLimit,
   );
 }
 
+// ---- Loan requests: the admin checks the collateral first, then the cooperative decides ----
+
+const appButton = (appUrl) =>
+  appUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(appUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Open FarmFund</a></p>`
+    : '';
+
+// To the farmer when an admin verified the collateral proof and the request
+// went on to the cooperative.
+async function sendLoanVerifiedEmail({ to, firstName, coopName, amount, appUrl }) {
+  const subject = `Your loan request was verified — now with ${coopName}`.replace(/[\r\n]+/g, ' ');
+  await sendEmail(
+    to,
+    subject,
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Collateral verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator checked the collateral proof for your <strong>${formatPeso(amount)}</strong> loan request and verified it.</p>
+        <p>Your request has been sent to <strong>${escapeHtml(coopName)}</strong>. They will review it and decide whether to approve it. We will tell you when they do.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+// To the farmer when an admin did not verify the collateral proof. The
+// reason is typed by the admin, so it is escaped.
+async function sendLoanRejectedEmail({ to, firstName, amount, reason, appUrl }) {
+  await sendEmail(
+    to,
+    'Your loan request was not verified',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Loan request not verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator could not verify the collateral proof for your <strong>${formatPeso(amount)}</strong> loan request, so it was not sent to the cooperative.</p>
+        <p><strong>Reason:</strong> ${escapeHtml(reason || 'No reason given.')}</p>
+        <p>You can send a new request with a clearer proof of your collateral.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+// To a cooperative's owner and finance managers when a verified loan request
+// arrives. Every fact comes from the saved loan; the farmer's name is escaped.
+async function sendLoanRequestEmail({ to, firstName, coopName, farmerName, amount, cropLabel, collateralLabel, appUrl }) {
+  const row = (label, value) =>
+    `<tr><td style="padding: 6px 0; color: #666;">${label}</td><td style="padding: 6px 0; text-align: right;"><strong>${value}</strong></td></tr>`;
+  const rows = [
+    row('Farmer', escapeHtml(farmerName)),
+    row('Amount', formatPeso(amount)),
+    cropLabel ? row('Crop', escapeHtml(cropLabel)) : '',
+    collateralLabel ? row('Collateral', escapeHtml(collateralLabel)) : '',
+  ].join('');
+  const subject = `New verified loan request from ${farmerName}`.replace(/[\r\n]+/g, ' ');
+  await sendEmail(
+    to,
+    subject,
+    wrapEmail(`
+        <h2 style="color: #2d4027;">A loan request is waiting for you</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>${escapeHtml(farmerName)} asked ${escapeHtml(coopName)} for a loan. A FarmFund administrator has already verified the collateral proof, so you can see it and decide.</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">${rows}</table>
+        <p>Open <strong>Loan Records</strong> in FarmFund to view the details and the collateral proof, then approve or reject the request.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
 // Sent to the OLD address right after the account's email is changed, so a
 // change the owner didn't make cannot go unnoticed. Both addresses are typed
 // by people, so both are escaped. The link goes to a page with a button — it
@@ -361,7 +425,7 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 }
 
 module.exports = {
-  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendEmailChangedNotice,
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
   sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,

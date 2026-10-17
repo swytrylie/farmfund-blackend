@@ -24,9 +24,11 @@ function toRow(n) {
       farmerName: d.farmerName || null,
       amount: typeof d.amount === 'number' ? d.amount : null,
       methodLabel: d.methodLabel || null,
+      reason: d.reason || null,
     },
     proofId: n.paymentProof ? String(n.paymentProof) : null,
     certificateId: n.certificate ? String(n.certificate) : null,
+    loanId: n.loan ? String(n.loan) : null,
   };
 }
 

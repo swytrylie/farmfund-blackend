@@ -8,6 +8,8 @@ const {
   loanIdRule,
   updateLoanStatusRules,
   listLoansRules,
+  adminReviewRules,
+  adminQueueRules,
 } = require('../validators/loan.validator');
 const {
   createLoan,
@@ -16,6 +18,8 @@ const {
   updateLoanStatus,
   loanOptions,
   collateralLink,
+  adminQueue,
+  adminReview,
 } = require('../controllers/loan.controller');
 
 const router = express.Router();
@@ -26,6 +30,9 @@ const router = express.Router();
 router.post('/', protect, uploadCertificateFile, createLoanRules, handleValidationErrors, asyncHandler(createLoan));
 router.get('/', protect, listLoansRules, handleValidationErrors, asyncHandler(getLoans));
 router.get('/options', protect, asyncHandler(loanOptions)); // before '/:id' so "options" is never taken for an id
+// The admin's check of a new request's collateral (the controller refuses anyone who is not an admin).
+router.get('/admin/queue', protect, adminQueueRules, handleValidationErrors, asyncHandler(adminQueue));
+router.patch('/:id/admin-review', protect, adminReviewRules, handleValidationErrors, asyncHandler(adminReview));
 router.get('/:id/collateral/link', protect, loanIdRule, handleValidationErrors, asyncHandler(collateralLink));
 router.get('/:id', protect, loanIdRule, handleValidationErrors, asyncHandler(getLoanById));
 

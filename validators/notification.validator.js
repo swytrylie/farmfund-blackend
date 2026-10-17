@@ -1,6 +1,6 @@
 const { param, query } = require('express-validator');
 
-const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified'];
+const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified', 'loan_submitted', 'loan_update', 'loan_alert'];
 
 const listMineRules = [
   query('page').optional().isInt({ min: 1, max: 100000 }).withMessage('Invalid page').toInt(),
