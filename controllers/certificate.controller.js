@@ -8,6 +8,7 @@ const storage = require('../utils/cloudinary');
 const { sniff } = require('../utils/fileSniff');
 const { accessFor } = require('../utils/certificateAccess');
 const { creditFor } = require('../utils/creditLimit');
+const { sendCertificateVerifiedEmail } = require('../utils/mailer');
 
 const TYPE_SHORT = { barangay_certificate: 'Barangay Certificate', income_certificate: 'Income Certificate' };
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -67,6 +68,47 @@ async function notifyAdmins(doc, farmer) {
     );
   } catch (err) {
     console.error('Could not notify admins about a certificate:', err && err.message);
+  }
+}
+
+const pesoWhole = (n) => `₱${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+
+// Tells the farmer, in their bell and by email, that an admin verified a
+// certificate. Each part is separate: a failure in one (say the email service
+// is down) never undoes the review or stops the other.
+async function notifyFarmerVerified(doc, farmer, credit) {
+  const short = TYPE_SHORT[doc.type];
+  const label = String(short || doc.title).slice(0, 100);
+  const limit = doc.type === 'barangay_certificate' && credit && credit.limit > 0 ? credit.limit : null;
+  const message = (short
+    ? `Your ${short} was verified.${limit ? ` Your credit limit is now ${pesoWhole(limit)}.` : ''}`
+    : `"${doc.title}" was verified.`
+  ).slice(0, 200);
+
+  try {
+    await Notification.create({
+      user: doc.farmer,
+      kind: 'certificate_verified',
+      title: 'Certificate verified',
+      message,
+      details: { typeLabel: label, ...(limit ? { amount: limit } : {}) },
+      certificate: doc._id,
+    });
+  } catch (err) {
+    console.error('Could not save the certificate verified notification:', err && err.message);
+  }
+
+  if (!farmer || !farmer.email) return;
+  try {
+    await sendCertificateVerifiedEmail({
+      to: farmer.email,
+      firstName: farmer.firstName,
+      label,
+      creditLimit: limit,
+      appUrl: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/+$/, '') : '',
+    });
+  } catch (err) {
+    console.error('Could not send the certificate verified email:', err && err.message);
   }
 }
 
@@ -231,7 +273,7 @@ async function review(req, res) {
   // It has been checked, so the "to verify" alert is done with, for every admin.
   await Notification.updateMany({ certificate: doc._id, readAt: { $exists: false } }, { $set: { readAt: new Date() } }).catch(() => {});
 
-  const farmer = await User.findById(doc.farmer).select('firstName lastName').lean();
+  const farmer = await User.findById(doc.farmer).select('firstName lastName email').lean();
   await recordAudit(req.user, status === 'verified' ? 'certificate.verify' : 'certificate.reject', {
     targetType: 'certificate',
     targetId: doc._id,
@@ -240,6 +282,11 @@ async function review(req, res) {
   });
 
   const credit = await creditFor(doc.farmer);
+
+  // Only the moment it BECOMES verified: re-verifying an already verified
+  // document must not send the farmer the same news again.
+  if (status === 'verified' && existing.status !== 'verified') await notifyFarmerVerified(doc, farmer, credit);
+
   new ApiResponse(200, { certificate: toRow(doc), credit }, status === 'verified' ? 'Certificate verified' : 'Certificate rejected').send(res);
 }
 

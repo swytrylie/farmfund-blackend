@@ -164,6 +164,30 @@ async function sendPaymentProofEmail({ to, firstName, coopName, farmerName, loan
   );
 }
 
+// Sent to a farmer when an admin verifies one of their certificates. The
+// credit limit (Barangay Certificate only) comes from the server's own
+// calculation, never from the browser.
+async function sendCertificateVerifiedEmail({ to, firstName, label, creditLimit, appUrl }) {
+  const creditLine =
+    typeof creditLimit === 'number' && creditLimit > 0
+      ? `<p>Your credit limit is now <strong>${formatPeso(creditLimit)}</strong>. You can request a loan from a cooperative up to that amount.</p>`
+      : '';
+  const link = appUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(appUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Open FarmFund</a></p>`
+    : '';
+  const subject = `Your ${label} was verified`.replace(/[\r\n]+/g, ' ');
+  await sendEmail(
+    to,
+    subject,
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Certificate verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator checked your <strong>${escapeHtml(label)}</strong> and verified it.</p>
+        ${creditLine}
+        ${link}`)
+  );
+}
+
 // Sent to the OLD address right after the account's email is changed, so a
 // change the owner didn't make cannot go unnoticed. Both addresses are typed
 // by people, so both are escaped. The link goes to a page with a button — it
@@ -337,7 +361,7 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 }
 
 module.exports = {
-  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendEmailChangedNotice,
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
   sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,

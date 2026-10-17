@@ -4,11 +4,12 @@ const mongoose = require('mongoose');
  * Notification
  * ------------
  * A message that lands in ONE person's notification bell and Alerts page.
- * Three kinds: a payment reminder a cooperative sent to a borrower, a
+ * Four kinds: a payment reminder a cooperative sent to a borrower, a
  * heads-up to a cooperative's finance staff that a farmer sent a proof of
- * payment to check, and a heads-up to the FarmFund admins that a farmer
- * submitted a certificate to verify. The email that goes with a reminder or
- * a proof is a separate thing.
+ * payment to check, a heads-up to the FarmFund admins that a farmer
+ * submitted a certificate to verify, and a note to the farmer that an admin
+ * verified their certificate. The email that goes with a reminder, a proof or
+ * a verification is a separate thing.
  *
  * - user is the only person who can ever see it (the routes filter on it).
  * - details is a snapshot of the facts at the time it was sent (what was owed,
@@ -16,10 +17,12 @@ const mongoose = require('mongoose');
  *   the email said.
  * - readAt is empty until the borrower opens it.
  */
+const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified'];
+
 const notificationSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted'], required: true },
+    kind: { type: String, enum: KINDS, required: true },
     title: { type: String, required: true, trim: true, maxlength: 200 },
     message: { type: String, required: true, trim: true, maxlength: 200 },
     details: {
@@ -31,7 +34,7 @@ const notificationSchema = new mongoose.Schema(
       dueNote: { type: String, trim: true, maxlength: 100 },
       contactEmail: { type: String, trim: true, maxlength: 200 },
       contactPhone: { type: String, trim: true, maxlength: 50 },
-      // payment_proof_submitted and certificate_submitted
+      // payment_proof_submitted and certificate_submitted (certificate_verified: amount = the farmer's credit limit)
       farmerName: { type: String, trim: true, maxlength: 200 },
       amount: { type: Number },
       methodLabel: { type: String, trim: true, maxlength: 50 },
@@ -47,4 +50,6 @@ const notificationSchema = new mongoose.Schema(
 
 notificationSchema.index({ user: 1, createdAt: -1 });
 
-module.exports = mongoose.model('Notification', notificationSchema);
+const Notification = mongoose.model('Notification', notificationSchema);
+Notification.KINDS = KINDS;
+module.exports = Notification;

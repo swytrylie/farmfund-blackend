@@ -67,10 +67,15 @@ async function markRead(req, res) {
   new ApiResponse(200, { id: String(existing._id), unread: false }, 'Marked as read').send(res);
 }
 
-// POST /api/notifications/read-all
+// POST /api/notifications/read-all[?kind=certificate_verified]
+// Without a kind, every unread notification of the signed-in person; with one,
+// only that kind.
 async function markAllRead(req, res) {
-  await Notification.updateMany({ user: req.user._id, readAt: { $exists: false } }, { $set: { readAt: new Date() } });
-  new ApiResponse(200, { unreadCount: 0 }, 'All marked as read').send(res);
+  const where = { user: req.user._id, readAt: { $exists: false } };
+  if (req.query.kind) where.kind = req.query.kind;
+  await Notification.updateMany(where, { $set: { readAt: new Date() } });
+  const unreadCount = await Notification.countDocuments({ user: req.user._id, readAt: { $exists: false } });
+  new ApiResponse(200, { unreadCount }, 'All marked as read').send(res);
 }
 
 module.exports = { listMine, markRead, markAllRead };
