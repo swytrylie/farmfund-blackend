@@ -37,7 +37,7 @@ async function creditFor(farmerId) {
   const limit = barangayStatus === 'verified' ? VERIFIED_LIMIT : 0;
 
   const loans = await Loan.find({ farmer: farmerId, status: { $in: OPEN_STATUSES } })
-    .select('principalAmount interestRatePercent termMonths')
+    .select('principalAmount interestRatePercent termMonths rateBasis')
     .lean();
   const sums = loans.length
     ? await LoanPayment.aggregate([

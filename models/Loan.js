@@ -1,10 +1,15 @@
 const mongoose = require('mongoose');
+const { CROP_KEYS, COLLATERAL_KEYS } = require('../utils/loanTerms');
 
 /**
  * Loan
  * ----
  * - farmer: REFERENCE → User is a separate entity.
  * - cooperative: REFERENCE → Cooperative is a separate entity.
+ * - Loans requested with a crop and collateral (the current way) store the
+ *   crop, its growing time, and the collateral. For these, interestRatePercent
+ *   is ONE flat percentage for the whole crop cycle (rateBasis 'cycle'). Older
+ *   loans have no rateBasis and keep their yearly rate over termMonths.
  * - payments: NOT stored here. LoanPayment references Loan (one-to-many,
  *   independently stored payment history) — see LoanPayment.js.
  *   Use LoanPayment.find({ loan: loanId }) or a virtual populate to fetch.
@@ -24,6 +29,23 @@ const loanSchema = new mongoose.Schema(
     principalAmount: { type: Number, required: true, min: 0 },
     interestRatePercent: { type: Number, required: true, min: 0 },
     termMonths: { type: Number, required: true, min: 1 },
+    // 'cycle' = interestRatePercent is a flat total for the crop cycle; missing = yearly rate (older loans)
+    rateBasis: { type: String, enum: ['cycle'] },
+    crop: { type: String, enum: CROP_KEYS },
+    growingDays: { type: Number, min: 1 },
+    collateral: {
+      kind: { type: String, enum: COLLATERAL_KEYS },
+      description: { type: String, trim: true, maxlength: 500 },
+      // The proof file is private. publicId (its storage reference) is left out of
+      // every normal query, so it cannot leak by accident; it is asked for by name
+      // only where a signed link is made.
+      file: {
+        publicId: { type: String, select: false },
+        format: { type: String }, // pdf | jpg | png
+        bytes: { type: Number },
+        originalName: { type: String, trim: true, maxlength: 200 },
+      },
+    },
     status: {
       type: String,
       enum: ['pending', 'approved', 'active', 'paid_off', 'defaulted', 'rejected'],

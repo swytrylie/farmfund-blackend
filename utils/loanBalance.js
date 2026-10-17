@@ -5,10 +5,15 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-// The model has no installment schedule — just principal, an annual
-// interest rate, and a term — so the amount owed is simple interest over
-// the whole term: principal × (1 + annual rate × months / 12).
+// The model has no installment schedule. Loans requested with a crop carry one
+// flat rate for the whole crop cycle (rateBasis 'cycle'), so they owe
+// principal × (1 + rate). Older loans carry an annual rate and a term, so
+// the amount owed is simple interest over the whole term:
+// principal × (1 + annual rate × months / 12).
 function totalPayable(loan) {
+  if (loan.rateBasis === 'cycle') {
+    return round2(loan.principalAmount + loan.principalAmount * (loan.interestRatePercent / 100));
+  }
   const interest = loan.principalAmount * (loan.interestRatePercent / 100) * (loan.termMonths / 12);
   return round2(loan.principalAmount + interest);
 }
