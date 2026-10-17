@@ -28,6 +28,11 @@ const ACTION_TEXT = {
   'system.maintenance_window': 'Changed the maintenance window',
   'certificate.verify': 'Verified a certificate',
   'certificate.reject': 'Rejected a certificate',
+  'loan.collateral.verify': 'Verified loan collateral',
+  'loan.collateral.reject': 'Rejected loan collateral',
+  'claim.verify': 'Verified a disaster relief claim',
+  'claim.reject': 'Rejected a disaster relief claim',
+  'claim.freeze': 'Activated a calamity freeze',
 };
 
 function manilaRange(startIso, endIso) {
@@ -108,6 +113,9 @@ function detailText(action, details) {
 
   if (action === 'certificate.reject' && d.note) parts.push(`Reason: ${d.note}`);
   if (action === 'certificate.verify' && d.note) parts.push(`Note: ${d.note}`);
+  if ((action === 'loan.collateral.reject' || action === 'claim.reject') && d.note) parts.push(`Reason: ${d.note}`);
+  if ((action === 'loan.collateral.verify' || action === 'claim.verify') && d.note) parts.push(`Note: ${d.note}`);
+  if (action === 'claim.freeze' && d.newDueDate) parts.push(`New due date: ${new Date(d.newDueDate).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}`);
 
   if (action === 'system.maintenance_on') parts.push('Farmers and cooperatives are blocked until it is turned off');
   if (action === 'system.maintenance_window') {

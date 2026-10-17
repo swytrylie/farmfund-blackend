@@ -18,6 +18,7 @@
 const MODELS = [
   require('../models/Announcement'),
   require('../models/Budget'),
+  require('../models/CalamityClaim'),
   require('../models/Certificate'),
   require('../models/Cooperative'),
   require('../models/CooperativeInvite'),

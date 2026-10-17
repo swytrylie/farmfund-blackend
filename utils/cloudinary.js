@@ -5,6 +5,7 @@
 const FOLDER = 'farmfund/certificates';
 const PROOF_FOLDER = 'farmfund/payment-proofs';
 const COLLATERAL_FOLDER = 'farmfund/collateral';
+const CLAIM_FOLDER = 'farmfund/disaster-claims';
 const LINK_SECONDS = 300;
 
 function isConfigured(env = process.env) {
@@ -59,4 +60,4 @@ async function destroy(publicId) {
   }
 }
 
-module.exports = { isConfigured, uploadBuffer, signedLink, destroy, LINK_SECONDS, FOLDER, PROOF_FOLDER, COLLATERAL_FOLDER };
+module.exports = { isConfigured, uploadBuffer, signedLink, destroy, LINK_SECONDS, FOLDER, PROOF_FOLDER, COLLATERAL_FOLDER, CLAIM_FOLDER };

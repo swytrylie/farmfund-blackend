@@ -20,7 +20,8 @@ const mongoose = require('mongoose');
 // loan_submitted: to the admins, a farmer's loan request needs its collateral checked.
 // loan_update: to a farmer, news about their loan (verified, not verified, ...).
 // loan_alert: to a cooperative's owner / finance managers, news about a loan of theirs.
-const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified', 'loan_submitted', 'loan_update', 'loan_alert'];
+// claim_submitted: to the admins, a farmer asked for disaster relief and the proof needs checking.
+const KINDS = ['payment_reminder', 'payment_proof_submitted', 'certificate_submitted', 'certificate_verified', 'loan_submitted', 'loan_update', 'loan_alert', 'claim_submitted'];
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -48,6 +49,7 @@ const notificationSchema = new mongoose.Schema(
     cooperative: { type: mongoose.Schema.Types.ObjectId, ref: 'Cooperative' },
     paymentProof: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentProof' },
     certificate: { type: mongoose.Schema.Types.ObjectId, ref: 'Certificate' },
+    claim: { type: mongoose.Schema.Types.ObjectId, ref: 'CalamityClaim' },
     readAt: { type: Date },
   },
   { timestamps: true }

@@ -9,7 +9,7 @@ const { lastMonths, bucketGrowth, REAL_USER } = require('./admin.controller');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MANILA_MS = 8 * 60 * 60 * 1000; // Manila is UTC+8 all year
 // A loan that was only asked for (pending) or turned down (rejected) isn't money lent.
-const LENT = { status: { $in: ['approved', 'active', 'paid_off', 'defaulted'] } };
+const LENT = { status: { $in: ['approved', 'active', 'grace_period', 'paid_off', 'defaulted'] } };
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const startOfMonthManila = (now) => {

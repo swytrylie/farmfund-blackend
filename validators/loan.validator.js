@@ -57,7 +57,7 @@ const updateLoanStatusRules = [
 ];
 
 const listLoansRules = [
-  query('status').optional().isIn(['pending_admin', 'admin_rejected', 'pending', 'approved', 'active', 'paid_off', 'defaulted', 'rejected']),
+  query('status').optional().isIn(['pending_admin', 'admin_rejected', 'pending', 'approved', 'active', 'grace_period', 'paid_off', 'defaulted', 'rejected']),
   query('page').optional().isInt({ min: 1 }).toInt(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
 ];

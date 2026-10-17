@@ -252,6 +252,96 @@ async function sendLoanRequestEmail({ to, firstName, coopName, farmerName, amoun
   );
 }
 
+// ---- Grace period and disaster relief ----
+
+const oneLine = (str) => String(str).replace(/[\r\n]+/g, ' ');
+const infoRow = (label, value) =>
+  `<tr><td style="padding: 6px 0; color: #666;">${label}</td><td style="padding: 6px 0; text-align: right;"><strong>${value}</strong></td></tr>`;
+const infoTable = (rows) => `<table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">${rows.filter(Boolean).join('')}</table>`;
+
+// To the farmer when their crop is ready to harvest and the 15-day grace period starts.
+async function sendGraceStartedEmail({ to, firstName, coopName, cropLabel, remaining, dueDate, graceDays, appUrl }) {
+  await sendEmail(
+    to,
+    'Your loan is in its grace period',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Your grace period has started</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>${cropLabel ? `Your ${escapeHtml(cropLabel)} is` : 'Your crop is'} ready to harvest, so your loan with <strong>${escapeHtml(coopName)}</strong> is now in a <strong>${graceDays}-day grace period</strong>. This gives you time to dry, mill and sell your harvest.</p>
+        ${infoTable([infoRow('Still to pay', formatPeso(remaining)), infoRow('Pay by', formatDate(dueDate))])}
+        <p>No extra interest is added during the grace period. You can pay at any time.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+// To the farmer when the admin checked their disaster relief claim.
+async function sendClaimVerifiedEmail({ to, firstName, calamityLabel, coopName, appUrl }) {
+  await sendEmail(
+    to,
+    'Your disaster relief claim was verified',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Disaster relief claim verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator verified your proof of <strong>${escapeHtml(calamityLabel)}</strong>. We have told <strong>${escapeHtml(coopName)}</strong>, and the owner can now activate a calamity freeze on your loan.</p>
+        <p>We will email you again when the freeze starts.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+async function sendClaimRejectedEmail({ to, firstName, calamityLabel, reason, appUrl }) {
+  await sendEmail(
+    to,
+    'Your disaster relief claim was not verified',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Disaster relief claim not verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator could not verify your proof of <strong>${escapeHtml(calamityLabel)}</strong>.</p>
+        <p><strong>Reason:</strong> ${escapeHtml(reason || 'No reason given.')}</p>
+        <p>If your farm was affected, you can send a new claim with a clearer proof.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+// To the cooperative's owner and finance managers once an admin verified a claim.
+async function sendClaimCoopEmail({ to, firstName, coopName, farmerName, calamityLabel, canFreeze, appUrl }) {
+  await sendEmail(
+    to,
+    oneLine(`Disaster relief claim verified for ${farmerName}`),
+    wrapEmail(`
+        <h2 style="color: #2d4027;">A borrower's disaster claim was verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator verified that ${escapeHtml(farmerName)}, a borrower of ${escapeHtml(coopName)}, was affected by <strong>${escapeHtml(calamityLabel)}</strong>.</p>
+        <p>Open <strong>Loan Records</strong> to see the claim and its proof. ${canFreeze ? 'As the owner, you can activate a calamity freeze on that loan.' : 'Only the cooperative owner can activate the calamity freeze.'}</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
+// To the farmer when the owner activates the calamity freeze.
+async function sendFreezeStartedEmail({ to, firstName, coopName, endsAt, newDueDate, freezeDays, appUrl }) {
+  await sendEmail(
+    to,
+    'Calamity freeze activated on your loan',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Calamity freeze activated</h2>
+        <p>${helloLine(firstName)}</p>
+        <p><strong>${escapeHtml(coopName)}</strong> activated a calamity freeze on your loan. For the next <strong>${freezeDays} days</strong> you owe <strong>no new interest</strong>, so you can clear your field and replant.</p>
+        ${infoTable([infoRow('Freeze ends', formatDate(endsAt)), infoRow('New due date', formatDate(newDueDate))])}
+        ${appButton(appUrl)}`)
+  );
+}
+
+async function sendFreezeEndedEmail({ to, firstName, coopName, newDueDate, appUrl }) {
+  await sendEmail(
+    to,
+    'Your calamity freeze has ended',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Calamity freeze ended</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>The calamity freeze on your loan with <strong>${escapeHtml(coopName)}</strong> has ended. Your loan is due on <strong>${formatDate(newDueDate)}</strong>.</p>
+        ${appButton(appUrl)}`)
+  );
+}
+
 // Sent to the OLD address right after the account's email is changed, so a
 // change the owner didn't make cannot go unnoticed. Both addresses are typed
 // by people, so both are escaped. The link goes to a page with a button — it
@@ -425,7 +515,7 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 }
 
 module.exports = {
-  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendEmailChangedNotice,
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendGraceStartedEmail, sendClaimVerifiedEmail, sendClaimRejectedEmail, sendClaimCoopEmail, sendFreezeStartedEmail, sendFreezeEndedEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
   sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,

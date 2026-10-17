@@ -29,6 +29,7 @@ function toRow(n) {
     proofId: n.paymentProof ? String(n.paymentProof) : null,
     certificateId: n.certificate ? String(n.certificate) : null,
     loanId: n.loan ? String(n.loan) : null,
+    claimId: n.claim ? String(n.claim) : null,
   };
 }
 

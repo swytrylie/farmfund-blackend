@@ -36,6 +36,7 @@ const MODELS = {
   Loan: require('../models/Loan'),
   LoanPayment: require('../models/LoanPayment'),
   PaymentProof: require('../models/PaymentProof'),
+  CalamityClaim: require('../models/CalamityClaim'),
   PaymentTransaction: require('../models/PaymentTransaction'),
   LoanReminder: require('../models/LoanReminder'),
   Notification: require('../models/Notification'),
@@ -58,6 +59,7 @@ const LABEL = {
   Loan: 'loans',
   LoanPayment: 'payments',
   PaymentProof: 'payment proofs',
+  CalamityClaim: 'disaster relief claims',
   PaymentTransaction: 'payment transactions',
   LoanReminder: 'reminders',
   Notification: 'notifications',
@@ -119,6 +121,7 @@ async function readUserData(userIds, session) {
   out.DismissedAlert = await find('DismissedAlert', { user: { $in: ids } }, session);
   out.Certificate = await find('Certificate', { farmer: { $in: ids } }, session);
   out.PaymentProof = await find('PaymentProof', { farmer: { $in: ids } }, session);
+  out.CalamityClaim = await find('CalamityClaim', { farmer: { $in: ids } }, session);
   out.Notification = await find('Notification', { user: { $in: ids } }, session);
   out.CooperativeMember = await find('CooperativeMember', { user: { $in: ids } }, session);
   return out;
@@ -165,6 +168,7 @@ async function planCooperative(coopId, session) {
     loanIds.length ? { $or: [{ cooperative: coopId }, { loan: { $in: loanIds } }] } : { cooperative: coopId },
     session
   );
+  const claims = await find('CalamityClaim', loanIds.length ? { $or: [{ cooperative: coopId }, { loan: { $in: loanIds } }] } : { cooperative: coopId }, session);
   const notifications = await find(
     'Notification',
     loanIds.length ? { $or: [{ cooperative: coopId }, { loan: { $in: loanIds } }] } : { cooperative: coopId },
@@ -204,6 +208,7 @@ async function planCooperative(coopId, session) {
     Loan: loans,
     LoanPayment: payments,
     PaymentProof: proofs,
+    CalamityClaim: claims,
     PaymentTransaction: transactions,
     LoanReminder: reminders,
     Notification: notifications,
@@ -356,6 +361,7 @@ async function restoreBundle(data, kind, session) {
     ...snap('DismissedAlert').map((d) => d.user),
     ...snap('Certificate').map((c) => c.farmer),
     ...snap('PaymentProof').map((p) => p.farmer),
+    ...snap('CalamityClaim').map((c) => c.farmer),
   ];
   const userAlive = await idsInDb('User', refUsers, session);
   for (const u of userInsert) userAlive.add(sid(u._id));
@@ -393,6 +399,7 @@ async function restoreBundle(data, kind, session) {
     ['Loan', (d) => has(userAlive, d.farmer) && has(coopAlive, d.cooperative)],
     ['LoanPayment', (d) => has(alive.Loan, d.loan)],
     ['PaymentProof', (d) => has(userAlive, d.farmer) && has(alive.Loan, d.loan)],
+    ['CalamityClaim', (d) => has(userAlive, d.farmer) && has(alive.Loan, d.loan)],
     ['LoanReminder', (d) => has(alive.Loan, d.loan)],
     ['Notification', (d) => has(userAlive, d.user) && (!d.loan || has(alive.Loan, d.loan))],
   ];
@@ -433,12 +440,12 @@ async function restoreBundle(data, kind, session) {
 
 // ---------- leaving the archive for good ----------
 
-// Files of archived certificates and payment proofs live in Cloudinary, outside the database.
+// Files of archived certificates, payment proofs and disaster claims live in Cloudinary, outside the database.
 function certificateFiles(item) {
-  if (!item.counts || !item.data || !(item.counts.Certificate || item.counts.PaymentProof)) return [];
+  if (!item.counts || !item.data || !(item.counts.Certificate || item.counts.PaymentProof || item.counts.CalamityClaim)) return [];
   try {
     const data = parseArchive(item);
-    return [...(data.Certificate || []), ...(data.PaymentProof || [])].map((c) => c && c.file && c.file.publicId).filter(Boolean);
+    return [...(data.Certificate || []), ...(data.PaymentProof || []), ...(data.CalamityClaim || [])].map((c) => c && c.file && c.file.publicId).filter(Boolean);
   } catch {
     return [];
   }

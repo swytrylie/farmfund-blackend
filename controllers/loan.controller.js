@@ -9,7 +9,9 @@ const { round2, totalPayable, addMonths } = require('../utils/loanBalance');
 const { creditFor } = require('../utils/creditLimit');
 const storage = require('../utils/cloudinary');
 const { sniff } = require('../utils/fileSniff');
-const { CROPS, COLLATERAL, growingDaysFor, rateFor, termMonthsFor, dueDateFor, options } = require('../utils/loanTerms');
+const { CROPS, COLLATERAL, GRACE_DAYS, scheduleFor, growingDaysFor, rateFor, termMonthsFor, dueDateFor, options } = require('../utils/loanTerms');
+const { syncLoanStages } = require('../utils/loanStages');
+const { attachRelief } = require('../utils/relief');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { recordAudit } = require('../utils/audit');
@@ -85,8 +87,11 @@ async function attachBalances(loans) {
   return loans.map((l) => {
     const payable = totalPayable(l);
     const paid = round2(paidByLoan.get(String(l._id)) || 0);
+    const sched = scheduleFor(l);
     return {
       ...l,
+      harvestAt: sched ? sched.harvestAt : null, // when the crop is ready; the grace period starts here
+      graceEndsAt: sched ? sched.graceEndsAt : null,
       rateBasis: l.rateBasis || 'annual',
       cropLabel: l.crop && CROPS[l.crop] ? CROPS[l.crop].label : null,
       collateral: publicCollateral(l.collateral),
@@ -98,17 +103,25 @@ async function attachBalances(loans) {
   });
 }
 
+// What one loan still owes: its total (principal + interest) minus what has been paid.
+async function balanceOf(loan) {
+  const sums = await LoanPayment.aggregate([{ $match: { loan: loan._id } }, { $group: { _id: null, paid: { $sum: '$amount' } } }]);
+  return round2(Math.max(0, totalPayable(loan) - round2((sums[0] && sums[0].paid) || 0)));
+}
+
 // One loan, fully populated and with balances — used by every endpoint
 // that returns a single loan so none of them can hand back a bare
 // document (raw ids instead of names) the way updateLoanStatus used to.
-async function loadSerializedLoan(id) {
+// `viewer` adds the disaster relief claim and what that person may do next.
+async function loadSerializedLoan(id, viewer) {
   const loan = await Loan.findById(id)
     .populate('cooperative', 'name')
     .populate('farmer', 'firstName lastName email')
     .lean();
   if (!loan) return null;
-  const [withBalances] = await attachBalances([loan]);
-  return withBalances;
+  const withBalances = await attachBalances([loan]);
+  const [out] = viewer ? await attachRelief(withBalances, viewer) : withBalances;
+  return out;
 }
 
 // POST /api/loans
@@ -206,7 +219,7 @@ async function createLoan(req, res) {
 
   await tellAdminsNewRequest(loan, req.user);
 
-  new ApiResponse(201, await loadSerializedLoan(loan._id), 'Loan request submitted. An admin will verify your collateral first, then it goes to your cooperative.').send(res);
+  new ApiResponse(201, await loadSerializedLoan(loan._id, req.user), 'Loan request submitted. An admin will verify your collateral first, then it goes to your cooperative.').send(res);
 }
 
 // GET /api/loans/options — the crops (with growing times) and collateral types
@@ -254,6 +267,7 @@ async function getLoans(req, res) {
   const { status } = req.query;
 
   const filter = {};
+  let stageScope = {};
   if (req.user.role !== 'admin') {
     // A cooperative's own staff (owner/finance_manager/member) aren't
     // farmers borrowing money — they're the lender's side, reviewing
@@ -265,14 +279,20 @@ async function getLoans(req, res) {
     const membership = await CooperativeMember.findOne({ user: req.user._id, status: 'active' });
     if (membership) {
       filter.cooperative = membership.cooperative;
+      stageScope = { cooperative: membership.cooperative };
       // Requests still with the admin are not the cooperative's to see yet.
       if (status && ADMIN_STAGE.includes(status)) filter.status = { $in: [] };
       else if (!status) filter.status = { $nin: ADMIN_STAGE };
     } else {
       filter.farmer = req.user._id;
+      stageScope = { farmer: req.user._id };
     }
   }
   if (status && !filter.status) filter.status = status;
+
+  // Crop loans reaching harvest (or leaving their grace period) are updated
+  // for just the loans being loaded, so the list is never behind.
+  await syncLoanStages(stageScope);
 
   const [loans, total] = await Promise.all([
     Loan.find(filter)
@@ -285,7 +305,7 @@ async function getLoans(req, res) {
     Loan.countDocuments(filter),
   ]);
 
-  new ApiResponse(200, await attachBalances(loans), 'Loans retrieved successfully', {
+  new ApiResponse(200, await attachRelief(await attachBalances(loans), req.user), 'Loans retrieved successfully', {
     page,
     limit,
     total,
@@ -295,7 +315,8 @@ async function getLoans(req, res) {
 
 // GET /api/loans/:id  (includes this loan's payments, newest first)
 async function getLoanById(req, res) {
-  const loan = await loadSerializedLoan(req.params.id);
+  await syncLoanStages({ loan: req.params.id });
+  const loan = await loadSerializedLoan(req.params.id, req.user);
   if (!loan) throw ApiError.notFound('Loan not found');
 
   await assertCanViewLoan(loan, req.user);
@@ -345,7 +366,10 @@ async function updateLoanStatus(req, res) {
     if (req.body.dueDate) loan.dueDate = req.body.dueDate;
     // A loan for a crop falls due when the crop has grown (plus the grace
     // days), counted from the day it is approved, so the date is set then.
-    if (!loan.dueDate && loan.growingDays) loan.dueDate = dueDateFor(loan.issuedDate, loan.growingDays);
+    if (!loan.dueDate && loan.growingDays) {
+      loan.dueDate = dueDateFor(loan.issuedDate, loan.growingDays);
+      loan.graceDays = GRACE_DAYS; // this due date already includes the 15-day grace period
+    }
   }
   // The loan matures one term after it's actually disbursed. Without this,
   // a loan activated from the UI (which only sends a status) would never
@@ -356,8 +380,10 @@ async function updateLoanStatus(req, res) {
   }
 
   await loan.save();
+  // A loan activated after its harvest day goes straight into its grace period.
+  await syncLoanStages({ loan: loan._id });
 
-  new ApiResponse(200, await loadSerializedLoan(loan._id), 'Loan status updated successfully').send(res);
+  new ApiResponse(200, await loadSerializedLoan(loan._id, req.user), 'Loan status updated successfully').send(res);
 }
 
 const REVIEW_LABEL = { pending: 'Waiting for verification', verified: 'Verified', rejected: 'Not verified' };
@@ -466,4 +492,4 @@ async function adminReview(req, res) {
   new ApiResponse(200, { loan: toQueueRow({ ...done, cooperative: { _id: done.cooperative, name: coop && coop.name } }, farmer) }, verified ? 'Collateral verified. The request went to the cooperative.' : 'Loan request not verified').send(res);
 }
 
-module.exports = { createLoan, getLoans, getLoanById, updateLoanStatus, loanOptions, collateralLink, adminQueue, adminReview };
+module.exports = { createLoan, getLoans, getLoanById, updateLoanStatus, loanOptions, collateralLink, adminQueue, adminReview, balanceOf, serializeLoanFor: loadSerializedLoan };

@@ -16,7 +16,7 @@ const { recordAudit } = require('../utils/audit');
 const REAL_USER = { role: { $ne: 'admin' }, isEmailVerified: { $ne: false } };
 const LIVE_FARM = { isActive: { $ne: false } };
 // A loan that was only asked for (pending) or turned down (rejected) isn't money lent.
-const LENT = { status: { $in: ['approved', 'active', 'paid_off', 'defaulted'] } };
+const LENT = { status: { $in: ['approved', 'active', 'grace_period', 'paid_off', 'defaulted'] } };
 const ACCESS_HOURS = 24;
 
 const MANILA_MS = 8 * 60 * 60 * 1000; // Manila is UTC+8 all year

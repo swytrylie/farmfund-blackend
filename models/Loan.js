@@ -51,7 +51,7 @@ const loanSchema = new mongoose.Schema(
     // (now with the cooperative). Not verified -> admin_rejected (never sent).
     status: {
       type: String,
-      enum: ['pending_admin', 'admin_rejected', 'pending', 'approved', 'active', 'paid_off', 'defaulted', 'rejected'],
+      enum: ['pending_admin', 'admin_rejected', 'pending', 'approved', 'active', 'grace_period', 'paid_off', 'defaulted', 'rejected'],
       default: 'pending',
     },
     // The admin's check of the collateral proof. Missing on older loans, which
@@ -65,6 +65,13 @@ const loanSchema = new mongoose.Schema(
     },
     issuedDate: { type: Date },
     dueDate: { type: Date },
+    // grace_period = the crop is ready to harvest and the farmer has 15 days to
+    // pay (set by the system, never by hand). graceDays records which grace
+    // length the due date was set with (15 now; older loans have none).
+    graceDays: { type: Number },
+    graceStartedAt: { type: Date },
+    // Days a calamity freeze pushed the harvest and the due date later.
+    delayDays: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

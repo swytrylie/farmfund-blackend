@@ -4,7 +4,7 @@ const Loan = require('../models/Loan');
 const ApiError = require('./ApiError');
 const { round2, totalPayable } = require('./loanBalance');
 
-const ACTIVE_LIKE = ['active', 'defaulted']; // payments still make sense on these
+const ACTIVE_LIKE = ['active', 'grace_period', 'defaulted']; // payments still make sense on these
 
 /**
  * recordLoanPayment

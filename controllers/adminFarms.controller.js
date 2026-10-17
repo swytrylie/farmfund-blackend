@@ -9,7 +9,7 @@ const REAL_USER = { role: { $ne: 'admin' }, isEmailVerified: { $ne: false } };
 
 // A farm is "linked to a cooperative" when its owner has borrowed from one.
 // Loans that were only asked for (pending) or turned down (rejected) don't count.
-const LINKING_LOANS = { status: { $in: ['approved', 'active', 'paid_off', 'defaulted'] } };
+const LINKING_LOANS = { status: { $in: ['approved', 'active', 'grace_period', 'paid_off', 'defaulted'] } };
 
 // A farm the owner removed (soft delete) has isActive:false and is not listed.
 const LIVE_FARM = { isActive: { $ne: false } };

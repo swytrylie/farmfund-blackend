@@ -48,7 +48,7 @@ async function createLoanReminder(req, res) {
 
   await assertCooperativeStaffOrAdmin(loan.cooperative._id, req.user);
 
-  if (!['active', 'defaulted'].includes(loan.status)) {
+  if (!['active', 'grace_period', 'defaulted'].includes(loan.status)) {
     throw ApiError.badRequest(`Reminders can only be sent for active loans (this loan is ${loan.status})`);
   }
   if (!loan.farmer?.email) throw ApiError.badRequest('This borrower has no email address on file');

@@ -1,4 +1,18 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
-  "crons": [{ "path": "/api/cron/backup", "schedule": "0 19 * * *" }]
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/loans",
+      "schedule": "30 19 * * *"
+    }
+  ]
 }
