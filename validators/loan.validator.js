@@ -6,7 +6,13 @@ const { CROP_KEYS, COLLATERAL_KEYS } = require('../utils/loanTerms');
 // they are not accepted here (anything sent for them is ignored).
 const createLoanRules = [
   body('cooperative').isMongoId().withMessage('A valid cooperative id is required'),
-  body('principalAmount').isFloat({ min: 1, max: 500000 }).withMessage('principalAmount must be between 1 and 500,000').toFloat(),
+  // No fixed ceiling here: how much a farmer can borrow is their available
+  // credit, which createLoan checks. Centavos are fine (up to 2 decimals).
+  body('principalAmount')
+    .isFloat({ min: 1 }).withMessage('principalAmount must be at least 1')
+    .bail()
+    .custom((v) => /^\d{1,12}(\.\d{1,2})?$/.test(String(v).trim())).withMessage('principalAmount can have at most 2 decimal places')
+    .toFloat(),
   body('crop').isIn(CROP_KEYS).withMessage('Choose the crop this loan is for'),
   body('collateralType').isIn(COLLATERAL_KEYS).withMessage('Choose what you are putting up as collateral'),
   body('collateralDescription')
