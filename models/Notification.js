@@ -45,6 +45,8 @@ const notificationSchema = new mongoose.Schema(
       methodLabel: { type: String, trim: true, maxlength: 50 },
       // loan notices: why a request was not verified, what the loan is for
       reason: { type: String, trim: true, maxlength: 300 },
+      // payment verified: the number of the receipt that was issued
+      receiptNo: { type: String, trim: true, maxlength: 30 },
     },
     loan: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan' },
     cooperative: { type: mongoose.Schema.Types.ObjectId, ref: 'Cooperative' },

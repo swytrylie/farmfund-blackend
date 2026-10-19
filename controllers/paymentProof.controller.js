@@ -14,6 +14,7 @@ const { recordLoanPayment, ACTIVE_LIKE } = require('../utils/recordLoanPayment')
 const { sendPaymentProofEmail } = require('../utils/mailer');
 const LoanReceipt = require('../models/LoanReceipt');
 const { ensureCounter, nextReceiptNo } = require('../utils/receipts');
+const { tellFarmerPaymentVerified } = require('../utils/paymentNotices');
 
 const STAFF_ROLES = ['owner', 'finance_manager'];
 const MAX_PENDING_PER_LOAN = 5;
@@ -264,11 +265,12 @@ async function verify(req, res) {
   const issuedAt = new Date();
   const [coop, farmer] = await Promise.all([
     Cooperative.findById(doc.cooperative).select('name').lean(),
-    User.findById(doc.farmer).select('firstName lastName').lean(),
+    User.findById(doc.farmer).select('firstName lastName email').lean(),
   ]);
   await ensureCounter(issuedAt);
 
   let updated;
+  let issuedReceiptNo;
   const result = await recordLoanPayment({
     loanId: doc.loan,
     amount: doc.amount,
@@ -286,6 +288,7 @@ async function verify(req, res) {
       if (!updated) throw ApiError.conflict('This proof was already reviewed.');
 
       const receiptNo = await nextReceiptNo(issuedAt, session);
+      issuedReceiptNo = receiptNo;
       await LoanReceipt.create(
         [
           {
@@ -312,6 +315,19 @@ async function verify(req, res) {
         { session }
       );
     },
+  });
+
+  // The payment and its receipt are saved. Now tell the farmer, in their bell
+  // and by email; this never throws and never undoes what was just recorded.
+  await tellFarmerPaymentVerified({
+    farmer,
+    proof: doc,
+    coopName: coop && coop.name,
+    methodLabel: METHOD_LABEL[doc.method] || doc.method,
+    loanRef: loanRefOf(doc.loan),
+    receiptNo: issuedReceiptNo,
+    remainingBalance: result.remainingBalance,
+    paidOff: result.loanStatus === 'paid_off',
   });
 
   new ApiResponse(

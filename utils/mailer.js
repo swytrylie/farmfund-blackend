@@ -274,6 +274,30 @@ async function sendGraceStartedEmail({ to, firstName, coopName, cropLabel, remai
   );
 }
 
+// To the farmer when their cooperative verifies a proof of payment. Every
+// figure comes from the saved payment and receipt; the cooperative's name and
+// the reference number were typed by people, so they are escaped.
+async function sendPaymentVerifiedEmail({ to, firstName, coopName, loanRef, amount, methodLabel, referenceNumber, receiptNo, remaining, paidOff, appUrl }) {
+  await sendEmail(
+    to,
+    oneLine(`Payment verified — receipt ${receiptNo}`),
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Your payment was verified</h2>
+        <p>${helloLine(firstName)}</p>
+        <p><strong>${escapeHtml(coopName)}</strong> verified your payment and applied it to your loan. Your official digital receipt is now in <strong>Digital Receipts</strong>.</p>
+        ${infoTable([
+          infoRow('Receipt no.', escapeHtml(receiptNo)),
+          infoRow('Loan', escapeHtml(loanRef)),
+          infoRow('Amount paid', formatPeso(amount)),
+          infoRow('Payment method', escapeHtml(methodLabel)),
+          referenceNumber ? infoRow('Reference no.', escapeHtml(referenceNumber)) : '',
+          infoRow('Remaining balance', formatPeso(remaining)),
+        ])}
+        ${paidOff ? '<p>Your loan is now <strong>fully paid</strong>. Thank you!</p>' : ''}
+        ${appButton(appUrl)}`)
+  );
+}
+
 // To the farmer when the admin checked their disaster relief claim.
 async function sendClaimVerifiedEmail({ to, firstName, calamityLabel, coopName, appUrl }) {
   await sendEmail(
@@ -532,7 +556,7 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 }
 
 module.exports = {
-  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendGraceStartedEmail, sendClaimVerifiedEmail, sendClaimRejectedEmail, sendClaimCoopEmail, sendFreezeStartedEmail, sendFreezeEndedEmail, sendEmailChangedNotice,
+  sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendGraceStartedEmail, sendPaymentVerifiedEmail, sendClaimVerifiedEmail, sendClaimRejectedEmail, sendClaimCoopEmail, sendFreezeStartedEmail, sendFreezeEndedEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
   sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountUnlockedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,
