@@ -19,9 +19,11 @@ const ACTIVE_LIKE = ['active', 'grace_period', 'defaulted']; // payments still m
  * result, instead of both checking "does this fit?" against the same stale
  * total and together overpaying the loan.
  *
- * `inside(session, payment)` is optional. It runs in that same transaction
- * right after the payment is created, so a caller can change something else
- * (mark a proof as verified) and have both succeed or fail together.
+ * `inside(session, payment, totals)` is optional. It runs in that same
+ * transaction right after the payment is created, so a caller can change
+ * something else (mark a proof as verified, issue the receipt) and have all of
+ * it succeed or fail together. `totals` = { amountPaid, remainingBalance,
+ * loanStatus } as they are after this payment.
  *
  * Returns { payment, loanStatus, amountPaid, remainingBalance }.
  */
@@ -63,7 +65,7 @@ async function recordLoanPayment({ loanId, amount, method, paymentDate, recorded
         { session }
       );
 
-      if (inside) await inside(session, payment);
+      if (inside) await inside(session, payment, { amountPaid, remainingBalance, loanStatus });
     });
   } finally {
     await session.endSession();

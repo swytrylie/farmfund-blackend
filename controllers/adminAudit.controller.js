@@ -7,6 +7,7 @@ const ACTION_TEXT = {
   'user.suspend': 'Suspended account',
   'user.reactivate': 'Restored account',
   'user.unlock': 'Unlocked a locked account',
+  'creditlimit.set': "Changed a farmer's credit limit",
   'user.update': 'Updated account details',
   'user.password_reset_request': 'Sent password reset email',
   'user.delete': 'Deleted account',

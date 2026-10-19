@@ -150,8 +150,12 @@ async function createLoan(req, res) {
 
   // A farmer can only borrow up to their credit limit, which comes from a
   // verified Barangay Certificate (PHP 0 until one is verified).
-  const before = await creditFor(req.user._id);
+  const before = await creditFor(req.user._id, cooperative);
   if (before.limit <= 0) {
+    // The certificate is fine but this cooperative's owner set the limit to 0.
+    if (before.custom && before.barangayStatus === 'verified') {
+      throw ApiError.forbidden('This cooperative has set your credit limit to ₱0, so you cannot request a loan from it right now.');
+    }
     throw ApiError.forbidden(
       before.barangayStatus === 'pending'
         ? 'Your Barangay Certificate is still waiting to be verified. You can request a loan once it is verified.'
@@ -210,7 +214,7 @@ async function createLoan(req, res) {
 
   // Two requests sent at the same moment could both pass the check above.
   // Look again now that this one exists, and take it back if the farmer went over.
-  const after = await creditFor(req.user._id);
+  const after = await creditFor(req.user._id, cooperative);
   if (after.used > after.limit + 0.001) {
     await Loan.deleteOne({ _id: loan._id });
     await storage.destroy(stored.publicId);

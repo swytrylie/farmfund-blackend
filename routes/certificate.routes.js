@@ -4,7 +4,7 @@ const handleValidationErrors = require('../middleware/handleValidationErrors');
 const { protect } = require('../middleware/auth');
 const { uploadCertificateFile } = require('../middleware/uploadCertificate');
 const { queue, credit, listMine, create, remove, listForFarmer, link, review } = require('../controllers/certificate.controller');
-const { idRule, farmerIdRule, createRules, reviewRules, queueRules } = require('../validators/certificate.validator');
+const { idRule, farmerIdRule, creditRules, createRules, reviewRules, queueRules } = require('../validators/certificate.validator');
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', asyncHandler(listMine));
-router.get('/credit', asyncHandler(credit));
+router.get('/credit', creditRules, handleValidationErrors, asyncHandler(credit));
 router.get('/queue', queueRules, handleValidationErrors, asyncHandler(queue));
 router.post('/', uploadCertificateFile, createRules, handleValidationErrors, asyncHandler(create));
 router.get('/farmer/:farmerId', farmerIdRule, handleValidationErrors, asyncHandler(listForFarmer));

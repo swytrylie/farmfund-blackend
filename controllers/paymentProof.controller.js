@@ -12,6 +12,8 @@ const { sniff } = require('../utils/fileSniff');
 const { round2, totalPayable } = require('../utils/loanBalance');
 const { recordLoanPayment, ACTIVE_LIKE } = require('../utils/recordLoanPayment');
 const { sendPaymentProofEmail } = require('../utils/mailer');
+const LoanReceipt = require('../models/LoanReceipt');
+const { ensureCounter, nextReceiptNo } = require('../utils/receipts');
 
 const STAFF_ROLES = ['owner', 'finance_manager'];
 const MAX_PENDING_PER_LOAN = 5;
@@ -240,12 +242,12 @@ async function loadForReview(req) {
   return doc;
 }
 
-function reviewSet(req, status, note) {
+function reviewSet(req, status, note, at = new Date()) {
   return {
     status,
     reviewedBy: req.user._id,
     reviewedByName: fullName(req.user),
-    reviewedAt: new Date(),
+    reviewedAt: at,
     ...(note ? { reviewNote: note } : {}),
   };
 }
@@ -256,6 +258,16 @@ async function verify(req, res) {
   const doc = await loadForReview(req);
   const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
 
+  // The farmer's official receipt is issued in the same transaction as the
+  // payment, so a verified payment always has exactly one receipt. What goes on
+  // it is read first, so the transaction itself stays short.
+  const issuedAt = new Date();
+  const [coop, farmer] = await Promise.all([
+    Cooperative.findById(doc.cooperative).select('name').lean(),
+    User.findById(doc.farmer).select('firstName lastName').lean(),
+  ]);
+  await ensureCounter(issuedAt);
+
   let updated;
   const result = await recordLoanPayment({
     loanId: doc.loan,
@@ -263,15 +275,42 @@ async function verify(req, res) {
     method: doc.method,
     paymentDate: doc.paymentDate,
     recordedBy: req.user._id,
-    inside: async (session, payment) => {
+    inside: async (session, payment, totals) => {
       // Only a still-pending proof can be flipped, so two people verifying at
       // once cannot both record the payment.
       updated = await PaymentProof.findOneAndUpdate(
         { _id: doc._id, status: 'pending' },
-        { $set: { ...reviewSet(req, 'verified', note), loanPayment: payment._id } },
+        { $set: { ...reviewSet(req, 'verified', note, issuedAt), loanPayment: payment._id } },
         { new: true, session }
       );
       if (!updated) throw ApiError.conflict('This proof was already reviewed.');
+
+      const receiptNo = await nextReceiptNo(issuedAt, session);
+      await LoanReceipt.create(
+        [
+          {
+            receiptNo,
+            category: 'loan_payment',
+            farmer: doc.farmer,
+            farmerName: fullName(farmer),
+            cooperative: doc.cooperative,
+            cooperativeName: coop ? coop.name : undefined,
+            loan: doc.loan,
+            loanRef: loanRefOf(doc.loan),
+            loanPayment: payment._id,
+            paymentProof: doc._id,
+            method: doc.method,
+            referenceNumber: doc.referenceNumber || undefined,
+            amount: doc.amount,
+            remainingBalance: totals.remainingBalance,
+            paymentDate: doc.paymentDate,
+            status: 'verified',
+            verifiedByName: fullName(req.user),
+            issuedAt,
+          },
+        ],
+        { session }
+      );
     },
   });
 

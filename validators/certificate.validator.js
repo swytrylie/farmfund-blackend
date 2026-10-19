@@ -3,7 +3,10 @@ const { body, param, query } = require('express-validator');
 const noAngles = (v) => !/[<>]/.test(v);
 
 const idRule = [param('id').isMongoId().withMessage('A valid certificate id is required')];
-const farmerIdRule = [param('farmerId').isMongoId().withMessage('A valid farmer id is required')];
+const farmerIdRule = [
+  param('farmerId').isMongoId().withMessage('A valid farmer id is required'),
+  query('cooperative').optional().isMongoId().withMessage('A valid cooperative id is required'),
+];
 
 // These run AFTER the file has been received, so the text fields are filled in.
 const TYPES = ['barangay_certificate', 'income_certificate', 'other'];
@@ -63,4 +66,7 @@ const queueRules = [
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Invalid limit').toInt(),
 ];
 
-module.exports = { idRule, farmerIdRule, createRules, reviewRules, queueRules, TYPES };
+// GET /credit - the farmer's own credit; ?cooperative= asks for the limit that applies to that cooperative
+const creditRules = [query('cooperative').optional().isMongoId().withMessage('A valid cooperative id is required')];
+
+module.exports = { idRule, farmerIdRule, creditRules, createRules, reviewRules, queueRules, TYPES };

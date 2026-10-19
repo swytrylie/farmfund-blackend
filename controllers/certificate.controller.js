@@ -159,7 +159,7 @@ async function queue(req, res) {
 
 // GET /api/certificates/credit — the signed-in farmer's credit limit, how much is used, and what is left
 async function credit(req, res) {
-  new ApiResponse(200, { credit: await creditFor(req.user._id) }, 'Credit limit fetched').send(res);
+  new ApiResponse(200, { credit: await creditFor(req.user._id, req.query.cooperative) }, 'Credit limit fetched').send(res);
 }
 
 // POST /api/certificates  (multipart: file, type?, title?, issuer?, issuedOn?)
@@ -227,7 +227,8 @@ async function listForFarmer(req, res) {
   const access = await accessFor(req.user, req.params.farmerId);
   if (!access) throw ApiError.forbidden('You do not have permission to view these certificates');
   const rows = await Certificate.find({ farmer: req.params.farmerId }).sort({ createdAt: -1, _id: -1 }).lean();
-  const credit = await creditFor(req.params.farmerId);
+  // A cooperative looking at its borrower sees the limit that applies to THAT cooperative.
+  const credit = await creditFor(req.params.farmerId, req.query.cooperative);
   new ApiResponse(200, { certificates: rows.map(toRow), canReview: access === 'admin', credit }, 'Certificates fetched').send(res);
 }
 

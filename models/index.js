@@ -12,4 +12,6 @@ module.exports = {
   Loan: require('./Loan'),
   LoanPayment: require('./LoanPayment'),
   PaymentTransaction: require('./PaymentTransaction'),
+  CoopCreditLimit: require('./CoopCreditLimit'),
+  LoanReceipt: require('./LoanReceipt'),
 };

@@ -22,7 +22,8 @@ const certificateRoutes = require('./certificate.routes');
 const notificationRoutes = require('./notification.routes');
 const paymentProofRoutes = require('./paymentProof.routes');
 const calamityClaimRoutes = require('./calamityClaim.routes');
-const aiRoutes = require('./ai.routes');
+const creditLimitRoutes = require('./creditLimit.routes');
+const loanReceiptRoutes = require('./loanReceipt.routes');
 const { maintenanceGuard } = require('../middleware/maintenanceGuard');
 
 const router = express.Router();
@@ -54,6 +55,7 @@ router.use('/certificates', certificateRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/payment-proofs', paymentProofRoutes);
 router.use('/calamity-claims', calamityClaimRoutes);
-router.use('/ai', aiRoutes);
+router.use('/credit-limits', creditLimitRoutes);
+router.use('/loan-receipts', loanReceiptRoutes);
 
 module.exports = router;
