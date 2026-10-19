@@ -37,4 +37,10 @@ const refreshLimiter = makeLimiter({
   message: 'Too many session checks, please try again later',
 });
 
-module.exports = { loginLimiter, registerLimiter, refreshLimiter };
+// The lock screen asks "am I unlocked yet?" every 30 seconds while it is open.
+const lockStatusLimiter = makeLimiter({
+  max: 90,
+  message: 'Too many checks, please try again later',
+});
+
+module.exports = { loginLimiter, registerLimiter, refreshLimiter, lockStatusLimiter };

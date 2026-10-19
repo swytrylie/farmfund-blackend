@@ -163,8 +163,8 @@ async function reactivateUser(req, res) {
   const updated = await User.findOneAndUpdate(
     { _id: target._id, role: { $ne: 'admin' }, isActive: false },
     {
-      $set: { isActive: true, statusChangedAt: now, statusChangedBy: req.user._id, failedLoginAttempts: 0 },
-      $unset: { statusReason: 1, lockUntil: 1 },
+      $set: { isActive: true, statusChangedAt: now, statusChangedBy: req.user._id, failedLoginAttempts: 0, lockLevel: 0 },
+      $unset: { statusReason: 1, lockUntil: 1, lockedAt: 1, lockRequestMessage: 1, lockRequestedAt: 1 },
     },
     { new: true }
   );

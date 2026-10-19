@@ -6,6 +6,7 @@ const ApiResponse = require('../utils/ApiResponse');
 const ACTION_TEXT = {
   'user.suspend': 'Suspended account',
   'user.reactivate': 'Restored account',
+  'user.unlock': 'Unlocked a locked account',
   'user.update': 'Updated account details',
   'user.password_reset_request': 'Sent password reset email',
   'user.delete': 'Deleted account',

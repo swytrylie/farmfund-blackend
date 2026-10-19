@@ -25,6 +25,7 @@ const USER_TRANSIENT_FIELDS = [
   'otpHash', 'otpExpiresAt', 'otpPurpose', 'otpAttempts', 'otpLastSentAt', 'otpSendWindowStart', 'otpSendCount',
   'pendingPasswordHash', 'pendingEmail', 'passwordResetTokenHash', 'passwordResetExpiresAt',
   'emailUndoTokenHash', 'emailUndoExpiresAt', 'previousEmail', 'refreshTokenHash', 'failedLoginAttempts', 'lockUntil',
+  'lockLevel', 'lockedAt', 'lockRequestMessage', 'lockRequestedAt', 'lastActivityAt',
 ];
 // Left out of the downloadable file as well (they stay in the saved snapshot,
 // which a restore needs): passwords, and the secret code of an invitation link.

@@ -466,6 +466,23 @@ async function sendAccountReactivatedEmail(to, firstName) {
   );
 }
 
+async function sendAccountUnlockedEmail(to, firstName) {
+  const loginUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/+$/, '') : '';
+  const button = loginUrl
+    ? `<p style="margin: 24px 0;"><a href="${escapeHtml(loginUrl)}" style="background: #2d4027; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Log in to FarmFund</a></p>`
+    : '';
+  await sendEmail(
+    to,
+    'Your FarmFund account is unlocked',
+    wrapEmail(`
+        <h2 style="color: #2d4027;">Your account is unlocked</h2>
+        <p>${helloLine(firstName)}</p>
+        <p>A FarmFund administrator has unlocked your account after the lockout. You can sign in again with your usual email and password.</p>
+        <p>If you don't remember your password, use "Forgot Password?" on the login page.</p>
+        ${button}`)
+  );
+}
+
 async function sendAccountDeletedByAdminEmail(to, firstName) {
   await sendEmail(
     to,
@@ -517,6 +534,6 @@ async function sendAdminPasswordResetRequest(to, firstName) {
 module.exports = {
   sendEmail, sendOtpEmail, sendInviteEmail, sendReminderEmail, sendPaymentProofEmail, sendCertificateVerifiedEmail, sendLoanVerifiedEmail, sendLoanRejectedEmail, sendLoanRequestEmail, sendGraceStartedEmail, sendClaimVerifiedEmail, sendClaimRejectedEmail, sendClaimCoopEmail, sendFreezeStartedEmail, sendFreezeEndedEmail, sendEmailChangedNotice,
   sendAccountRemovedEmail, sendCooperativeDecisionEmail,
-  sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountDeletedByAdminEmail,
+  sendAccountSuspendedEmail, sendAccountReactivatedEmail, sendAccountUnlockedEmail, sendAccountDeletedByAdminEmail,
   sendAdminEmailChangeNotice, sendAdminPasswordResetRequest,
 };

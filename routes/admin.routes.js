@@ -12,6 +12,7 @@ const {
   deleteUser,
 } = require('../controllers/adminUsers.controller');
 const { listAuditLogs } = require('../controllers/adminAudit.controller');
+const { listLockedAccounts, unlockAccount } = require('../controllers/adminLocked.controller');
 const { listFarms } = require('../controllers/adminFarms.controller');
 const { listFarmsRules } = require('../validators/adminFarms.validator');
 const { listActivity } = require('../controllers/adminActivity.controller');
@@ -50,6 +51,9 @@ router.patch('/users/:id/reactivate', userIdRule, handleValidationErrors, asyncH
 router.post('/users/:id/password-reset', userIdRule, handleValidationErrors, asyncHandler(requestPasswordReset));
 router.patch('/users/:id', updateUserRules, handleValidationErrors, asyncHandler(updateUser));
 router.delete('/users/:id', userIdRule, handleValidationErrors, asyncHandler(deleteUser));
+
+router.get('/locked-accounts', asyncHandler(listLockedAccounts));
+router.post('/locked-accounts/:id/unlock', userIdRule, handleValidationErrors, asyncHandler(unlockAccount));
 
 router.get('/cooperatives/:id/impact', cooperativeIdRule, handleValidationErrors, asyncHandler(getCooperativeImpact));
 router.delete('/cooperatives/:id', deleteCooperativeRules, handleValidationErrors, asyncHandler(deleteCooperative));

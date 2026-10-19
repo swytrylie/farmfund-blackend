@@ -70,6 +70,24 @@ const loginRules = [
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
+// The lock screen's "is my account unlocked yet?" check.
+const lockStatusRules = [body('email').trim().isEmail().withMessage('A valid email is required').normalizeEmail()];
+
+// The note a locked-out person sends the admin.
+const lockContactRules = [
+  body('email').trim().isEmail().withMessage('A valid email is required').normalizeEmail(),
+  body('message')
+    .isString()
+    .withMessage('Write a message for the admin')
+    .bail()
+    .trim()
+    .isLength({ min: 3, max: 300 })
+    .withMessage('Your message must be 3 to 300 characters')
+    .bail()
+    .custom((v) => !/[<>]/.test(v))
+    .withMessage('Your message cannot contain < or >'),
+];
+
 const updateProfileRules = [
   body('firstName').optional().trim().notEmpty().withMessage('firstName cannot be blank').isLength({ max: 50 }).matches(NAME_PATTERN).withMessage('firstName can only contain letters, spaces, apostrophes, hyphens and periods'),
   body('lastName').optional().trim().notEmpty().withMessage('lastName cannot be blank').isLength({ max: 50 }).matches(NAME_PATTERN).withMessage('lastName can only contain letters, spaces, apostrophes, hyphens and periods'),
@@ -147,6 +165,8 @@ const undoEmailChangeRules = [
 module.exports = {
   registerRules,
   loginRules,
+  lockStatusRules,
+  lockContactRules,
   updateProfileRules,
   changePasswordRules,
   verifySignupRules,

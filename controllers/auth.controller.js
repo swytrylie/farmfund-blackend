@@ -9,6 +9,8 @@ const { recordLoginEvent } = require('../utils/loginEvents');
 const { buildOtp, issueOtp, releaseCooldown, checkAndConsumeOtp } = require('../utils/otp');
 const { consentFields } = require('../utils/terms');
 const { isIdle, idleError } = require('../utils/idle');
+const { LOCK_SELECT, registerFailedAttempt, clearLockOn, lockDetails, requestSent } = require('../utils/accountLock');
+const { tellAdminsAboutLock } = require('../utils/lockNotices');
 
 // Shared by login() and getMe() — a User's role is only ever "user" or
 // "admin"; organization membership lives entirely in CooperativeMember, a
@@ -62,21 +64,26 @@ const {
 } = require('../utils/jwt');
 
 const SALT_ROUNDS = 12;
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-// A wrong password counts toward the same 5-strikes lockout everywhere a
-// password is checked — login, and the "confirm with your password" steps of
-// password change and email change. Otherwise someone holding a logged-in
-// session could guess passwords through those pages without limit.
-// Caller must have loaded +failedLoginAttempts +lockUntil.
+// A wrong password counts toward the same lockout (4 strikes: a 15 minute lock,
+// then 30 minutes each time, see utils/accountLock.js) everywhere a password is
+// checked — login, and the "confirm with your password" steps of password
+// change and email change. Otherwise someone holding a logged-in session could
+// guess passwords through those pages without limit.
+// Caller must have loaded LOCK_SELECT (the lock fields).
 async function recordFailedPassword(user) {
-  user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-  if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-    user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
-    user.failedLoginAttempts = 0;
-  }
+  registerFailedAttempt(user);
   await user.save();
+}
+
+// The "account locked" answer. Besides the message it carries when the lock
+// ends (worked out here, by the server's clock) and whether the person already
+// wrote to the admin, so the lock screen can show the real countdown.
+function lockedError(user) {
+  const err = ApiError.forbidden(LOCKED_MESSAGE);
+  err.errorCode = 'ACCOUNT_LOCKED';
+  err.details = lockDetails(user);
+  return err;
 }
 
 const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // how long the "wasn't me" link works
@@ -367,9 +374,7 @@ async function loginCore(req, res) {
   const { email, password } = req.body;
 
   // Explicitly select passwordHash + lockout fields since the schema hides them by default
-  const user = await User.findOne({ email }).select(
-    '+passwordHash +failedLoginAttempts +lockUntil'
-  );
+  const user = await User.findOne({ email }).select(`+passwordHash ${LOCK_SELECT}`);
 
   // Same generic error whether the email doesn't exist or the password is
   // wrong — never reveal which one, or attackers can enumerate real emails.
@@ -401,13 +406,16 @@ async function loginCore(req, res) {
   }
 
   if (user.isLocked()) {
-    throw withReason(ApiError.forbidden(LOCKED_MESSAGE), 'locked');
+    throw withReason(lockedError(user), 'locked');
   }
 
   const isMatch = await user.comparePassword(password);
 
   if (!isMatch) {
     await recordFailedPassword(user);
+    // The wrong password that used up the last try locks the account: say so
+    // straight away instead of a plain "wrong password".
+    if (user.isLocked()) throw withReason(lockedError(user), 'wrong_password');
     throw withReason(invalidCredentialsError, 'wrong_password');
   }
 
@@ -418,8 +426,7 @@ async function loginCore(req, res) {
   if (loginBlockMessage) throw withReason(ApiError.forbidden(loginBlockMessage), 'org_not_approved');
 
   // Successful login: reset lockout counters, issue fresh tokens
-  user.failedLoginAttempts = 0;
-  user.lockUntil = undefined;
+  clearLockOn(user);
   user.lastLoginAt = new Date();
   user.lastActivityAt = user.lastLoginAt;
 
@@ -453,6 +460,40 @@ async function loginCore(req, res) {
       ...accountFields,
     },
   }, 'Login successful').send(res);
+}
+
+// POST /api/auth/lock-status  { email }
+// The lock screen asks this every 30 seconds so it notices when an admin
+// unlocks the account. Says nothing the login itself would not already say.
+async function lockStatus(req, res) {
+  const user = await User.findOne({ email: req.body.email }).select(LOCK_SELECT);
+  if (!user || user.role === 'admin' || !user.isLocked()) {
+    return new ApiResponse(200, { locked: false }, 'Not locked').send(res);
+  }
+  new ApiResponse(200, { locked: true, ...lockDetails(user) }, 'Locked').send(res);
+}
+
+// POST /api/auth/lock-contact  { email, message }
+// A locked-out person asking the admin for help. One message per lock; it
+// shows up on the admin's Locked Accounts page and in their bell.
+async function contactAdminAboutLock(req, res) {
+  const { email, message } = req.body;
+  const user = await User.findOne({ email }).select(`${LOCK_SELECT} +lockRequestMessage`);
+  if (!user || user.role === 'admin' || !user.isLocked()) {
+    return new ApiResponse(200, { sent: false }, 'This account is not locked').send(res);
+  }
+  if (requestSent(user)) {
+    return new ApiResponse(200, { sent: true, alreadySent: true }, 'Your message was already sent to the admin').send(res);
+  }
+  // Only if the lock is still the same one: an unlock meanwhile must not be undone by a late message.
+  const sameLock = { _id: user._id, lockUntil: { $gt: new Date() }, lockRequestedAt: { $exists: false } };
+  if (user.lockedAt) sameLock.lockedAt = user.lockedAt;
+  const saved = await User.updateOne(sameLock, { $set: { lockRequestMessage: message, lockRequestedAt: new Date() } });
+  if (!saved.matchedCount) {
+    return new ApiResponse(200, { sent: false }, 'This account is not locked').send(res);
+  }
+  await tellAdminsAboutLock(user, message);
+  new ApiResponse(200, { sent: true }, 'Your message was sent to the admin').send(res);
 }
 
 // POST /api/auth/refresh  (reads the httpOnly cookie, not the body)
@@ -617,7 +658,7 @@ async function updateProfile(req, res) {
 async function requestPasswordChange(req, res) {
   const { currentPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id).select('+passwordHash +failedLoginAttempts +lockUntil');
+  const user = await User.findById(req.user._id).select(`+passwordHash ${LOCK_SELECT}`);
   if (user.isLocked()) throw ApiError.forbidden(LOCKED_MESSAGE);
 
   const isMatch = await user.comparePassword(currentPassword);
@@ -668,7 +709,7 @@ async function requestEmailChange(req, res) {
   const { newEmail, password } = req.body;
   await assertCanEditOwnProfile(req.user._id);
 
-  const user = await User.findById(req.user._id).select('+passwordHash +failedLoginAttempts +lockUntil');
+  const user = await User.findById(req.user._id).select(`+passwordHash ${LOCK_SELECT}`);
   if (user.isLocked()) throw ApiError.forbidden(LOCKED_MESSAGE);
 
   const isMatch = await user.comparePassword(password);
@@ -772,11 +813,14 @@ async function undoEmailChange(req, res) {
   await User.updateOne(
     { _id: user._id },
     {
-      $set: { email: restored, passwordHash: unusablePassword, failedLoginAttempts: 0 },
+      $set: { email: restored, passwordHash: unusablePassword, failedLoginAttempts: 0, lockLevel: 0 },
       $unset: {
         previousEmail: 1,
         refreshTokenHash: 1,
         lockUntil: 1,
+        lockedAt: 1,
+        lockRequestMessage: 1,
+        lockRequestedAt: 1,
         pendingEmail: 1,
         pendingPasswordHash: 1,
         otpHash: 1,
@@ -876,8 +920,8 @@ async function resetPassword(req, res) {
   await User.updateOne(
     { _id: user._id },
     {
-      $set: { passwordHash: await bcrypt.hash(newPassword, SALT_ROUNDS), failedLoginAttempts: 0 },
-      $unset: { refreshTokenHash: 1, lockUntil: 1, pendingPasswordHash: 1 },
+      $set: { passwordHash: await bcrypt.hash(newPassword, SALT_ROUNDS), failedLoginAttempts: 0, lockLevel: 0 },
+      $unset: { refreshTokenHash: 1, lockUntil: 1, lockedAt: 1, lockRequestMessage: 1, lockRequestedAt: 1, pendingPasswordHash: 1 },
     }
   );
 
@@ -889,6 +933,8 @@ module.exports = {
   login,
   refresh,
   recordActivity,
+  lockStatus,
+  contactAdminAboutLock,
   logout,
   getMe,
   updateProfile,

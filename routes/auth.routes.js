@@ -1,11 +1,13 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const handleValidationErrors = require('../middleware/handleValidationErrors');
-const { loginLimiter, registerLimiter, refreshLimiter } = require('../middleware/authLimiter');
+const { loginLimiter, registerLimiter, refreshLimiter, lockStatusLimiter } = require('../middleware/authLimiter');
 const { protect } = require('../middleware/auth');
 const {
   registerRules,
   loginRules,
+  lockStatusRules,
+  lockContactRules,
   updateProfileRules,
   changePasswordRules,
   verifySignupRules,
@@ -23,6 +25,8 @@ const {
   login,
   refresh,
   recordActivity,
+  lockStatus,
+  contactAdminAboutLock,
   logout,
   getMe,
   updateProfile,
@@ -47,6 +51,11 @@ router.post('/logout', asyncHandler(logout));
 // Sent by the browser when the person does something; the only thing that
 // extends the 10-minute idle timer.
 router.post('/activity', protect, asyncHandler(recordActivity));
+
+// Locked-out screen: "am I unlocked yet?" and "contact the admin". Public, since
+// the person can't log in. The message counts every attempt per IP, like sign-up.
+router.post('/lock-status', lockStatusLimiter, lockStatusRules, handleValidationErrors, asyncHandler(lockStatus));
+router.post('/lock-contact', registerLimiter, lockContactRules, handleValidationErrors, asyncHandler(contactAdminAboutLock));
 router.get('/me', protect, asyncHandler(getMe));
 router.patch('/me', protect, updateProfileRules, handleValidationErrors, asyncHandler(updateProfile));
 

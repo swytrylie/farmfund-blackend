@@ -113,6 +113,13 @@ const userSchema = new mongoose.Schema(
     // the IP-based rate limiter on the login route).
     failedLoginAttempts: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
+    // How many times in a row the account has been locked (a correct password,
+    // an admin unlock or a password reset sets it back to 0), when the current
+    // lock started, and the message the person sent the admin about it.
+    lockLevel: { type: Number, default: 0, select: false },
+    lockedAt: { type: Date, select: false },
+    lockRequestMessage: { type: String, trim: true, maxlength: 300, select: false },
+    lockRequestedAt: { type: Date, select: false },
   },
   { timestamps: true }
 );
