@@ -22,6 +22,7 @@ const {
   register,
   login,
   refresh,
+  recordActivity,
   logout,
   getMe,
   updateProfile,
@@ -43,6 +44,9 @@ router.post('/register', registerLimiter, registerRules, handleValidationErrors,
 router.post('/login', loginLimiter, loginRules, handleValidationErrors, asyncHandler(login));
 router.post('/refresh', refreshLimiter, asyncHandler(refresh));
 router.post('/logout', asyncHandler(logout));
+// Sent by the browser when the person does something; the only thing that
+// extends the 10-minute idle timer.
+router.post('/activity', protect, asyncHandler(recordActivity));
 router.get('/me', protect, asyncHandler(getMe));
 router.patch('/me', protect, updateProfileRules, handleValidationErrors, asyncHandler(updateProfile));
 

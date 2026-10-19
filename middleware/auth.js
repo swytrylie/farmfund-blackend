@@ -1,6 +1,7 @@
 const { verifyAccessToken } = require('../utils/jwt');
 const ApiError = require('../utils/ApiError');
 const User = require('../models/User');
+const { isIdle, idleError } = require('../utils/idle');
 
 /**
  * protect
@@ -23,6 +24,10 @@ async function protect(req, res, next) {
     if (!user || !user.isActive) {
       throw ApiError.unauthorized('User no longer exists or is deactivated');
     }
+
+    // Nothing done for 10 minutes: the session is over. Deliberately NOT
+    // refreshed here — only the activity ping extends it (see utils/idle.js).
+    if (isIdle(user)) throw idleError();
 
     req.user = user; // available to every controller after this point
     next();

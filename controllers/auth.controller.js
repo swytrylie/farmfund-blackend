@@ -8,6 +8,7 @@ const { sendOtpEmail, sendEmailChangedNotice } = require('../utils/mailer');
 const { recordLoginEvent } = require('../utils/loginEvents');
 const { buildOtp, issueOtp, releaseCooldown, checkAndConsumeOtp } = require('../utils/otp');
 const { consentFields } = require('../utils/terms');
+const { isIdle, idleError } = require('../utils/idle');
 
 // Shared by login() and getMe() — a User's role is only ever "user" or
 // "admin"; organization membership lives entirely in CooperativeMember, a
@@ -295,6 +296,7 @@ async function verifySignupOtp(req, res) {
   const refreshToken = generateRefreshToken(user);
   user.refreshTokenHash = hashToken(refreshToken);
   user.lastLoginAt = new Date();
+  user.lastActivityAt = user.lastLoginAt;
   await user.save();
 
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions);
@@ -419,6 +421,7 @@ async function loginCore(req, res) {
   user.failedLoginAttempts = 0;
   user.lockUntil = undefined;
   user.lastLoginAt = new Date();
+  user.lastActivityAt = user.lastLoginAt;
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
@@ -476,6 +479,22 @@ async function refresh(req, res) {
     throw ApiError.unauthorized('Refresh token invalid — please log in again');
   }
 
+  // Nobody has done anything for 10 minutes: end the session for good. The
+  // stored token is revoked so the cookie can't be used again, and the reply
+  // carries a code the browser uses to explain why the person was signed out.
+  // (Renewing a token is NOT activity, so this never extends the session.)
+  if (isIdle(user)) {
+    user.refreshTokenHash = undefined;
+    await user.save();
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      path: '/api/auth',
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    });
+    throw idleError();
+  }
+
   // If an admin rejects (or re-opens) the cooperative while someone is logged
   // in, their session ends the next time it is renewed.
   const refreshBlockMessage = await getCooperativeBlockMessage(user._id);
@@ -491,6 +510,16 @@ async function refresh(req, res) {
   res.cookie(REFRESH_COOKIE_NAME, newRefreshToken, refreshCookieOptions);
 
   new ApiResponse(200, { accessToken: newAccessToken }, 'Token refreshed').send(res);
+}
+
+// POST /api/auth/activity  (protected)
+// The browser sends this when the person actually does something. It is the
+// only thing that extends the idle timer. An already-idle session never gets
+// here: protect() has ended it.
+async function recordActivity(req, res) {
+  const now = new Date();
+  await User.updateOne({ _id: req.user._id }, { $set: { lastActivityAt: now } });
+  new ApiResponse(200, { lastActivityAt: now }, 'Activity recorded').send(res);
 }
 
 // POST /api/auth/logout
@@ -859,6 +888,7 @@ module.exports = {
   register,
   login,
   refresh,
+  recordActivity,
   logout,
   getMe,
   updateProfile,

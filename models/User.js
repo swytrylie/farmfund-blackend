@@ -46,6 +46,9 @@ const userSchema = new mongoose.Schema(
     address: { type: String, trim: true, maxlength: 255 },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
+    // Last time the person actually did something in the app (login, or a
+    // browser activity ping). Drives the 10-minute idle sign-out.
+    lastActivityAt: { type: Date },
 
     // Set by an admin when an account is suspended (isActive -> false) or
     // reactivated: why (only kept while suspended), when, and which admin.

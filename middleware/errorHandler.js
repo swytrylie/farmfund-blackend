@@ -47,6 +47,7 @@ function errorHandler(err, req, res, next) {
     success: false,
     statusCode,
     message: error.message,
+    ...(error.errorCode ? { code: error.errorCode } : {}),
     ...(error.details ? { details: error.details } : {}),
     ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {}),
   });
