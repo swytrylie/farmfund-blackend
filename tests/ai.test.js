@@ -12,7 +12,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { generateAccessToken } = require('../utils/jwt');
 const errorHandler = require('../middleware/errorHandler');
-const { setClientForTests } = require('../utils/ai/gemini');
+const { setClientForTests, thinkingFor, modelChain } = require('../utils/ai/gemini');
 const { recommendCrops } = require('../utils/ai/cropAdvisor');
 const { findLgu } = require('../utils/ai/pangasinan');
 
@@ -160,6 +160,8 @@ test('summary with Gemini: AI text merged with engine numbers, no farmer name se
   assert.equal(data.drivers[0].text, 'AI text about income.');
   assert.ok(data.drivers[1].text.length > 10, 'missing driver text falls back to the rules');
   assert.equal(data.metrics[0].value, '₱140,400');
+  assert.match(calls[0].config.systemInstruction, /You are the AI Farm Advisor for FARM FUND/);
+  assert.equal(calls[0].config.tools, undefined, 'summary uses only the farmer records, no web search');
   const sent = JSON.stringify(calls);
   assert.ok(!/Manuel|Reyes|manuel@example/.test(sent), 'farmer identity leaked to Gemini');
   assert.ok(saved.insight?.payload, 'Gemini summary was cached');
@@ -184,6 +186,10 @@ test('chat with Gemini: streams, strips markdown, hides phone numbers, sends his
   assert.equal(req.contents.length, 3);
   assert.equal(req.contents.at(-1).parts[0].text, 'Text me at [phone] about my loan');
   assert.match(req.config.systemInstruction, /PLAIN TEXT ONLY/);
+  assert.match(req.config.systemInstruction, /You are the AI Farm Advisor for FARM FUND/);
+  assert.deepEqual(req.config.tools, [{ googleSearch: {} }], 'chat uses Google Search like the AI Studio setup');
+  assert.equal(req.model, 'gemini-3.1-flash-lite');
+  assert.equal(req.config.thinkingConfig.thinkingLevel, 'HIGH');
   assert.ok(!/Manuel/.test(req.config.systemInstruction));
 });
 
@@ -210,4 +216,13 @@ test('crop suggestions follow the Pangasinan calendar', () => {
   const rice = recs.find((r) => r.id === 'rice-irrigated');
   assert.ok(rice && !rice.plantNow && rice.reasons.some((r) => r.code === 'NEEDS_IRRIGATION'));
   assert.ok(recs.every((r) => r.suggestedAreaHa <= 2));
+});
+
+test('AI Studio settings: Gemini 3.1 Flash-Lite, HIGH thinking only for Gemini 3, env overrides', () => {
+  assert.equal(modelChain()[0], 'gemini-3.1-flash-lite');
+  assert.deepEqual(thinkingFor('gemini-3.1-flash-lite'), { thinkingConfig: { thinkingLevel: 'HIGH' } });
+  assert.deepEqual(thinkingFor('gemini-2.5-flash'), {}, '2.5 models reject thinkingLevel');
+  process.env.GEMINI_THINKING_LEVEL = 'low';
+  assert.deepEqual(thinkingFor('gemini-3.1-flash-lite'), { thinkingConfig: { thinkingLevel: 'LOW' } });
+  delete process.env.GEMINI_THINKING_LEVEL;
 });

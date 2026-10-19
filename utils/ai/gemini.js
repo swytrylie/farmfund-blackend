@@ -1,7 +1,16 @@
 // Thin wrapper around Google's Gemini API (free tier from Google AI Studio).
 // - Model names come from env vars, so you can switch when Google renames models.
-// - On quota (429), server errors or timeouts it tries the next model, then
-//   throws AiUnavailableError so the caller can answer from the rules instead.
+// - On quota (429), unknown model (404), server errors or timeouts it tries the
+//   next model, then throws AiUnavailableError so the caller can answer from the
+//   rules instead.
+//
+// Settings (env vars, all optional):
+//   GEMINI_MODEL            first model to try          (default gemini-3.1-flash-lite)
+//   GEMINI_FALLBACK_MODELS  comma-separated backups     (default gemini-3.5-flash-lite)
+//   GEMINI_THINKING_LEVEL   MINIMAL | LOW | MEDIUM | HIGH, Gemini 3 models only (default HIGH, as set
+//                           in AI Studio; LOW answers faster)
+//   AI_CHAT_WEB_SEARCH      chat may search Google, as set in AI Studio (default true; set false
+//                           to save free quota)
 const { GoogleGenAI } = require('@google/genai');
 
 let client = null;
@@ -15,13 +24,20 @@ function getClient() {
 function setClientForTests(c) { client = c; }
 
 function modelChain() {
-  const primary = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS ?? 'gemini-2.5-flash-lite').split(',').map((s) => s.trim()).filter(Boolean);
+  const primary = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS ?? 'gemini-3.5-flash-lite').split(',').map((s) => s.trim()).filter(Boolean);
   return [...new Set([primary, ...fallbacks])];
 }
 
+// Gemini 3 models take a thinking *level*; older 2.5 models reject it, so it is only sent to Gemini 3.
+function thinkingFor(model) {
+  if (!/^gemini-3/.test(model)) return {};
+  const level = String(process.env.GEMINI_THINKING_LEVEL || 'HIGH').toUpperCase();
+  return ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'].includes(level) ? { thinkingConfig: { thinkingLevel: level } } : {};
+}
+
 const retryable = (err) =>
-  [429, 500, 503, 504].includes(err?.status) || err?.name === 'TimeoutError' || err?.name === 'AbortError' || err instanceof SyntaxError;
+  [404, 429, 500, 503, 504].includes(err?.status) || err?.name === 'TimeoutError' || err?.name === 'AbortError' || err instanceof SyntaxError;
 
 class AiUnavailableError extends Error {
   constructor(cause) {
@@ -32,7 +48,7 @@ class AiUnavailableError extends Error {
 }
 
 /** One answer. With `jsonSchema`, returns the parsed object in `data`. */
-async function generate({ system, prompt, history = [], jsonSchema, temperature = 0.4, timeoutMs = 25000 }) {
+async function generate({ system, prompt, history = [], jsonSchema, temperature = 0.4, timeoutMs = 50000 }) {
   const ai = getClient();
   if (!ai) throw new AiUnavailableError(new Error('GEMINI_API_KEY is not set'));
   let lastErr;
@@ -45,6 +61,7 @@ async function generate({ system, prompt, history = [], jsonSchema, temperature 
           systemInstruction: system,
           temperature,
           abortSignal: AbortSignal.timeout(timeoutMs),
+          ...thinkingFor(model),
           ...(jsonSchema ? { responseMimeType: 'application/json', responseJsonSchema: jsonSchema } : {}),
         },
       });
@@ -59,7 +76,7 @@ async function generate({ system, prompt, history = [], jsonSchema, temperature 
 }
 
 /** Streaming answer for the chatbot: yields text pieces as they arrive. */
-async function* generateStream({ system, prompt, history = [], temperature = 0.5, timeoutMs = 45000, signal }) {
+async function* generateStream({ system, prompt, history = [], temperature = 0.5, timeoutMs = 60000, signal, webSearch = process.env.AI_CHAT_WEB_SEARCH !== 'false' }) {
   const ai = getClient();
   if (!ai) throw new AiUnavailableError(new Error('GEMINI_API_KEY is not set'));
   let lastErr;
@@ -70,7 +87,13 @@ async function* generateStream({ system, prompt, history = [], temperature = 0.5
       const stream = await ai.models.generateContentStream({
         model,
         contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
-        config: { systemInstruction: system, temperature, abortSignal },
+        config: {
+          systemInstruction: system,
+          temperature,
+          abortSignal,
+          ...thinkingFor(model),
+          ...(webSearch ? { tools: [{ googleSearch: {} }] } : {}),
+        },
       });
       for await (const chunk of stream) {
         if (chunk.text) { started = true; yield chunk.text; }
@@ -84,4 +107,4 @@ async function* generateStream({ system, prompt, history = [], temperature = 0.5
   throw new AiUnavailableError(lastErr);
 }
 
-module.exports = { generate, generateStream, AiUnavailableError, modelChain, setClientForTests };
+module.exports = { generate, generateStream, AiUnavailableError, modelChain, thinkingFor, setClientForTests };
