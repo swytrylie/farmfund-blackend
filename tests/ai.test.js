@@ -4,6 +4,7 @@
 // No database is needed: the Mongoose model methods the advisor calls are
 // replaced with in-memory fixtures, and Gemini is replaced with a fake client.
 process.env.JWT_ACCESS_SECRET = 'test-secret';
+process.env.NODE_ENV = 'test'; // turns off the per-minute AI limit during tests
 delete process.env.GEMINI_API_KEY;
 
 const { test, before, after, beforeEach } = require('node:test');
@@ -14,7 +15,7 @@ const { generateAccessToken } = require('../utils/jwt');
 const errorHandler = require('../middleware/errorHandler');
 const { setClientForTests, thinkingFor, modelChain } = require('../utils/ai/gemini');
 const { recommendCrops } = require('../utils/ai/cropAdvisor');
-const { findLgu } = require('../utils/ai/pangasinan');
+const { findLgu, seasonFor } = require('../utils/ai/pangasinan');
 
 const M = {
   User: require('../models/User'), Farm: require('../models/Farm'), Field: require('../models/Field'),
@@ -225,4 +226,78 @@ test('AI Studio settings: Gemini 3.1 Flash-Lite, HIGH thinking only for Gemini 3
   process.env.GEMINI_THINKING_LEVEL = 'low';
   assert.deepEqual(thinkingFor('gemini-3.1-flash-lite'), { thinkingConfig: { thinkingLevel: 'LOW' } });
   delete process.env.GEMINI_THINKING_LEVEL;
+});
+
+test('advisor with Gemini: AI writes the welcome and picks/explains crops; numbers stay from FARM FUND', async () => {
+  const plain = await get('/advisor'); // rules version (no Gemini yet) to know the candidates
+  const second = plain.data.cropRecommendations[1];
+  const calls = fakeGemini({
+    json: {
+      welcome: "I'm your AI Farm Advisor. **You sold ₱140,400** of palay this month.",
+      crops: [{ id: second.id, why: 'Fits your clay loam soil.' }, { id: 'not-a-real-crop', why: 'x' }],
+    },
+  });
+  const { data } = await get('/advisor?refresh=1');
+  assert.equal(data.source, 'gemini');
+  assert.equal(data.welcomeMessage, "Magandang araw, Manuel!\n\nI'm your AI Farm Advisor. You sold ₱140,400 of palay this month.");
+  assert.equal(data.cropRecommendations.length, 1, 'unknown crop ids are dropped');
+  assert.equal(data.cropRecommendations[0].id, second.id);
+  assert.equal(data.cropRecommendations[0].why, 'Fits your clay loam soil.');
+  assert.deepEqual(data.cropRecommendations[0].estimated, second.estimated, 'pesos come from FARM FUND, not the AI');
+  const req = calls[0];
+  assert.match(req.config.systemInstruction, /You are the AI Farm Advisor for FARM FUND/);
+  assert.deepEqual(req.config.tools, [{ googleSearch: {} }]);
+  assert.ok(!/Manuel|Reyes/.test(JSON.stringify(req)), 'farmer name not sent to Gemini');
+  assert.ok(saved.insight?.payload?.welcome, 'AI opening is cached');
+  // Served from the cache next time, still greeted by name
+  setClientForTests(null);
+  const again = await get('/advisor');
+  assert.equal(again.data.cached, true);
+  assert.match(again.data.welcomeMessage, /^Magandang araw, Manuel!/);
+});
+
+test('advisor: if Gemini refuses Google Search with JSON (400), it asks again without search', async () => {
+  const calls = [];
+  setClientForTests({
+    models: {
+      generateContent: async (req) => {
+        calls.push(req);
+        if (req.config.tools) throw Object.assign(new Error('tools + json not supported'), { status: 400 });
+        return { text: JSON.stringify({ welcome: "I'm your AI Farm Advisor.", crops: [] }) };
+      },
+    },
+  });
+  const { data } = await get('/advisor?refresh=1');
+  assert.equal(data.source, 'gemini');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].config.tools, undefined);
+  assert.ok(data.cropRecommendations.length > 0, 'falls back to FARM FUND crop picks when the AI picks none');
+});
+
+test('season label follows the Pangasinan calendar, including the transition into the dry season', () => {
+  const at = (iso) => seasonFor(new Date(`${iso}T08:00:00+08:00`));
+  assert.equal(at('2026-07-10').label, 'Wet season (tag-ulan)');
+  assert.equal(at('2026-10-05').label, 'Late wet season (tag-ulan)');
+  assert.equal(at('2026-10-19').key, 'transition');
+  assert.equal(at('2026-10-19').label, 'Post-wet transition / early dry season (simula ng tag-araw)');
+  assert.equal(at('2026-12-05').key, 'dry');
+  assert.equal(at('2026-05-10').key, 'pre-wet');
+  // 11 PM on Oct 15 in Manila is still "late wet", even though it's already Oct 15 15:00 UTC
+  assert.equal(seasonFor(new Date('2026-10-15T23:00:00+08:00')).key, 'wet');
+  assert.equal(seasonFor(new Date('2026-10-16T00:30:00+08:00')).key, 'transition');
+});
+
+test('every crop card uses the same area (the farm size), so profits compare fairly', () => {
+  const october = new Date('2026-10-19T08:00:00+08:00');
+  const recs = recommendCrops({ today: october, lgu: findLgu('Bayambang'), farm: { sizeHa: 1, soilType: 'loam' }, pastCrops: [], limit: 20 });
+  assert.ok(recs.length > 2);
+  assert.deepEqual([...new Set(recs.map((r) => r.suggestedAreaHa))], [1]);
+  const eggplant = recs.find((r) => r.id === 'eggplant');
+  assert.ok(eggplant, 'eggplant is in season in October');
+  assert.equal(eggplant.estimated.profit, eggplant.estimated.profitPerHa, 'on 1 ha, profit = profit per hectare');
+  assert.match(eggplant.why, /start with part of your land/);
+  const unknownSize = recommendCrops({ today: october, lgu: findLgu('Bayambang'), farm: {}, pastCrops: [], limit: 20 });
+  assert.deepEqual([...new Set(unknownSize.map((r) => r.suggestedAreaHa))], [1], 'defaults to 1 ha when the farm size is not recorded');
+  const twoHa = recommendCrops({ today: october, lgu: findLgu('Bayambang'), farm: { sizeHa: 2.5 }, pastCrops: [], limit: 20 });
+  assert.deepEqual([...new Set(twoHa.map((r) => r.suggestedAreaHa))], [2.5]);
 });

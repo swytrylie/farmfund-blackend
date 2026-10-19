@@ -250,14 +250,17 @@ async function buildFacts(user, { today = new Date(), fetchImpl } = {}) {
 
   // ---- What to plant now
   const lastCycle = cycles[cycles.length - 1];
-  facts.cropRecommendations = recommendCrops({
+  // Up to 8 in-season candidates; the AI Advisor lets Gemini pick and explain the best ones.
+  const cropCandidates = recommendCrops({
     today, lgu, forecast: weather,
     farm: { sizeHa: areaHa, soilType },
     pastCrops: cycles.map(cropNameOf),
     lastCrop: lastCycle ? cropNameOf(lastCycle) : null,
+    limit: 8,
   });
+  facts.cropRecommendations = cropCandidates.slice(0, 4);
 
-  return { facts, farmFound: !!farm };
+  return { facts, farmFound: !!farm, cropCandidates };
 }
 
 module.exports = { buildFacts };

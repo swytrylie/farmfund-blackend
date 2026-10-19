@@ -48,23 +48,33 @@ class AiUnavailableError extends Error {
 }
 
 /** One answer. With `jsonSchema`, returns the parsed object in `data`. */
-async function generate({ system, prompt, history = [], jsonSchema, temperature = 0.4, timeoutMs = 50000 }) {
+async function generate({ system, prompt, history = [], jsonSchema, temperature = 0.4, timeoutMs = 50000, webSearch = false }) {
   const ai = getClient();
   if (!ai) throw new AiUnavailableError(new Error('GEMINI_API_KEY is not set'));
+  const call = (model, withSearch) =>
+    ai.models.generateContent({
+      model,
+      contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: system,
+        temperature,
+        abortSignal: AbortSignal.timeout(timeoutMs),
+        ...thinkingFor(model),
+        ...(withSearch ? { tools: [{ googleSearch: {} }] } : {}),
+        ...(jsonSchema ? { responseMimeType: 'application/json', responseJsonSchema: jsonSchema } : {}),
+      },
+    });
   let lastErr;
   for (const model of modelChain()) {
     try {
-      const res = await ai.models.generateContent({
-        model,
-        contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: system,
-          temperature,
-          abortSignal: AbortSignal.timeout(timeoutMs),
-          ...thinkingFor(model),
-          ...(jsonSchema ? { responseMimeType: 'application/json', responseJsonSchema: jsonSchema } : {}),
-        },
-      });
+      let res;
+      try {
+        res = await call(model, webSearch);
+      } catch (err) {
+        // Some models refuse Google Search together with a JSON answer: ask again without search.
+        if (!(webSearch && err?.status === 400)) throw err;
+        res = await call(model, false);
+      }
       const text = res.text || '';
       return { model, text, data: jsonSchema ? JSON.parse(text) : undefined };
     } catch (err) {

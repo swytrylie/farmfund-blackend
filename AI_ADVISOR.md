@@ -6,7 +6,7 @@ answers from these endpoints. Every route needs a signed-in farmer account
 
 | Endpoint | What it returns |
 |---|---|
-| `GET /api/ai/advisor` | Welcome message, suggested questions, and crops to plant this season for the farm's municipality. No AI call, so it loads instantly. |
+| `GET /api/ai/advisor` (`?refresh=1` to skip the cache) | Gemini writes the welcome message and picks and explains the crops to plant now (from FARM FUND's in-season candidates for the farm's municipality). Cached per farmer. |
 | `GET /api/ai/summary` (`?refresh=1` to skip the cache) | The AI Financial Summary: metrics, four "what's driving this" cards and a focus recommendation. |
 | `POST /api/ai/chat` `{ message }` | The advisor's answer, streamed as plain text while it is written. |
 | `GET /api/ai/chat` and `DELETE /api/ai/chat` | Load or clear the saved conversation. |
@@ -17,8 +17,11 @@ Add these in Vercel → Project → Settings → Environment Variables (and `.en
 
 ```
 GEMINI_API_KEY=...                       # free key: https://aistudio.google.com/apikey
-GEMINI_MODEL=gemini-2.5-flash            # optional; change if Google renames its free Flash model
-GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite   # optional; tried when the first model is out of quota
+GEMINI_MODEL=gemini-3.1-flash-lite        # optional; the model from AI Studio
+GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite   # optional; tried when the first model is out of quota
+GEMINI_THINKING_LEVEL=HIGH               # optional; LOW answers faster
+AI_CHAT_WEB_SEARCH=true                  # optional; false = the chat doesn't search Google
+AI_ADVISOR_WEB_SEARCH=true               # optional; false = the advisor opening doesn't search Google
 AI_CACHE_HOURS=6                         # optional; how long a summary is reused
 AI_DEBUG=false                           # optional; logs when the AI falls back to the rules
 ```

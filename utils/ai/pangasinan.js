@@ -81,27 +81,41 @@ function findLgu(name) {
   return INDEX.get(normalizeKey(name)) || null;
 }
 
-/** Pangasinan has a Type I climate: dry Nov–Apr, wet May–Oct. */
+/**
+ * Pangasinan has a Type I climate: a wet season (about May–October) and a dry
+ * season (about November–April), with transition weeks in between. The season
+ * shown to farmers follows the calendar day so late October reads as the
+ * transition into the dry season, which is when the dry-season crops are
+ * recommended.
+ *   key: 'dry' | 'pre-wet' | 'wet' | 'transition'
+ */
+const SEASONS = [
+  // [from month/day, key, label, note]
+  [[1, 1], 'dry', 'Dry season (tag-araw)',
+    'Dry season: irrigated rice, onion, vegetables and legumes are growing. Water gets scarcer each week, so plan irrigation.'],
+  [[4, 1], 'dry', 'Late dry season (tag-araw)',
+    'Late dry season: water is scarce; favor short-duration, drought-tolerant crops unless irrigated, and prepare land for the rains.'],
+  [[5, 1], 'pre-wet', 'Start of the wet season (simula ng tag-ulan)',
+    'The rains are starting: land preparation and planting of rainfed rice and corn begin. Watch for early typhoons.'],
+  [[6, 1], 'wet', 'Wet season (tag-ulan)',
+    'Wet season: main rainfed rice and corn growing period. Watch for typhoons and flooding.'],
+  [[10, 1], 'wet', 'Late wet season (tag-ulan)',
+    'Late wet season: wet-season rice is being harvested and land is prepared for the dry season. Typhoons are still possible.'],
+  [[10, 16], 'transition', 'Post-wet transition / early dry season (simula ng tag-araw)',
+    'Transition into the dry season: after the wet-season rice harvest, plant dry-season crops such as irrigated rice, vegetables and legumes on the remaining soil moisture. Late typhoons are still possible.'],
+  [[12, 1], 'dry', 'Dry season (tag-araw)',
+    'Early dry season: best window for irrigated rice, vegetables, onion, mungbean and other legumes on residual moisture.'],
+];
+
 function seasonFor(date = new Date()) {
-  const m = date.getMonth() + 1;
-  if (m >= 5 && m <= 10) {
-    return {
-      key: 'wet',
-      label: 'Wet season (tag-ulan)',
-      note:
-        m >= 9
-          ? 'Late wet season: harvest of wet-season rice, land preparation for the dry season. Typhoons are still possible.'
-          : 'Wet season: main rainfed rice and corn planting period. Watch for typhoons and flooding.',
-    };
-  }
-  return {
-    key: 'dry',
-    label: 'Dry season (tag-araw)',
-    note:
-      m >= 11 || m <= 1
-        ? 'Early dry season: best window for irrigated rice, vegetables, onion, mungbean and other legumes on residual moisture.'
-        : 'Late dry season: water is scarce; favor short-duration, drought-tolerant crops unless irrigated.',
-  };
+  // Use the Philippine calendar day (servers such as Vercel run on UTC).
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: 'numeric', day: 'numeric' }).formatToParts(date);
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  const md = get('month') * 100 + get('day');
+  let current = SEASONS[0];
+  for (const row of SEASONS) if (md >= row[0][0] * 100 + row[0][1]) current = row;
+  const [, key, label, note] = current;
+  return { key, label, note };
 }
 
 module.exports = { LGUS, findLgu, seasonFor };

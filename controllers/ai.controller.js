@@ -5,7 +5,7 @@ const AiInsight = require('../models/AiInsight');
 const AiChat = require('../models/AiChat');
 const { buildFacts } = require('../utils/ai/farmFacts');
 const { generate, generateStream } = require('../utils/ai/gemini');
-const { chatSystem, summarySystem, SUMMARY_SCHEMA } = require('../utils/ai/prompts');
+const { chatSystem, summarySystem, SUMMARY_SCHEMA, advisorSystem, advisorSchema } = require('../utils/ai/prompts');
 const {
   SUGGESTED_PROMPTS, GAP_TIPS, DRIVER_TITLES, welcomeMessage, summaryMetrics, driverTags, driverStatus, fallbackSummary, fallbackChat,
 } = require('../utils/ai/advisorText');
@@ -27,22 +27,77 @@ function assertFarmer(user) {
   if (user.role !== 'user') throw ApiError.forbidden('The AI Farm Advisor is for farmer accounts');
 }
 
-// GET /api/ai/advisor
-// What the AI Advisor page and widget show before any question: a welcome
-// message built from the farmer's own numbers, suggested questions, and the
-// crops that fit this season. No AI call, so it's instant and costs no quota.
+// GET /api/ai/advisor?refresh=1
+// What the AI Advisor page and widget show before any question. Gemini (with
+// the FARM FUND system instruction, HIGH thinking and Google Search) writes the
+// welcome message and picks and explains the crops to plant now from the
+// in-season candidates. The pesos and dates on the crop cards still come from
+// FARM FUND's own calculations. Saved for a few hours per farmer; if Gemini is
+// unavailable the page is built from the farmer's numbers by rules instead.
+const plain = (t) => String(t || '').replace(/\*\*|__/g, '').replace(/^#+\s*/gm, '').trim();
+const stripReasons = ({ reasons, ...c }) => c;
+
 async function getAdvisor(req, res) {
   assertFarmer(req.user);
-  const { facts } = await buildFacts(req.user);
-  new ApiResponse(200, {
-    welcomeMessage: welcomeMessage(req.user.firstName, facts),
+  const { facts, cropCandidates } = await buildFacts(req.user);
+  const greeting = `Magandang araw${req.user.firstName ? `, ${req.user.firstName}` : ''}!`;
+  const base = {
     suggestedPrompts: SUGGESTED_PROMPTS,
     location: facts.location,
     season: facts.season,
     weather: facts.weather,
-    cropRecommendations: facts.cropRecommendations.map(({ reasons, ...c }) => c),
     dataGaps: facts.dataGaps,
     dataNotes: facts.dataNotes,
+  };
+  const dataHash = crypto
+    .createHash('sha1')
+    .update(JSON.stringify({ v: 2, day: facts.today, money: facts.money.last30Days, loans: facts.loans, gaps: facts.dataGaps, crops: cropCandidates.map((c) => c.id), weather: facts.weather?.risks }))
+    .digest('hex');
+
+  if (req.query.refresh !== '1') {
+    const hit = await AiInsight.findOne({ user: req.user._id, kind: 'advisor', dataHash, expiresAt: { $gt: new Date() } }).lean();
+    if (hit) {
+      return new ApiResponse(200, { ...base, ...hit.payload, welcomeMessage: `${greeting}\n\n${hit.payload.welcome}`, cached: true }).send(res);
+    }
+  }
+
+  if (cropCandidates.length || facts.money.last30Days.income || facts.loans.active.length) {
+    try {
+      const { data } = await generate({
+        system: advisorSystem(),
+        prompt: `FACTS:\n${JSON.stringify(facts)}\n\nCROP CANDIDATES:\n${JSON.stringify(cropCandidates)}`,
+        jsonSchema: advisorSchema(cropCandidates.length ? cropCandidates.map((c) => c.id) : ['none']),
+        webSearch: process.env.AI_ADVISOR_WEB_SEARCH !== 'false',
+        temperature: 0.4,
+      });
+      const picked = [];
+      for (const choice of data.crops || []) {
+        const crop = cropCandidates.find((c) => c.id === choice.id);
+        if (crop && !picked.some((p) => p.id === crop.id)) picked.push({ ...stripReasons(crop), why: plain(choice.why) || crop.why });
+      }
+      const payload = {
+        source: 'gemini',
+        welcome: plain(data.welcome) || welcomeMessage(null, facts).split('\n').slice(2).join('\n'),
+        cropRecommendations: (picked.length ? picked : cropCandidates.slice(0, 4).map(stripReasons)).slice(0, 4),
+      };
+      await AiInsight.findOneAndUpdate(
+        { user: req.user._id, kind: 'advisor' },
+        { dataHash, payload, expiresAt: new Date(Date.now() + CACHE_HOURS * 3600 * 1000) },
+        { upsert: true }
+      );
+      return new ApiResponse(200, { ...base, ...payload, welcomeMessage: `${greeting}\n\n${payload.welcome}`, cached: false }).send(res);
+    } catch (err) {
+      log('advisor fallback:', err.cause?.message || err.message);
+    }
+  }
+
+  // Rules: the farmer still gets a full page when Gemini can't answer.
+  new ApiResponse(200, {
+    ...base,
+    source: 'rules',
+    welcomeMessage: welcomeMessage(req.user.firstName, facts),
+    cropRecommendations: cropCandidates.slice(0, 4).map(stripReasons),
+    cached: false,
   }).send(res);
 }
 

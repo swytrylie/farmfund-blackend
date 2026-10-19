@@ -14,12 +14,13 @@ const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 8,
   keyGenerator: (req) => String(req.user._id),
+  skip: () => process.env.NODE_ENV === 'test',
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many questions in a minute. Please wait a moment and try again.' },
 });
 
-router.get('/advisor', protect, asyncHandler(getAdvisor));
+router.get('/advisor', protect, aiLimiter, refreshRules, handleValidationErrors, asyncHandler(getAdvisor));
 router.get('/summary', protect, aiLimiter, refreshRules, handleValidationErrors, asyncHandler(getSummary));
 router.get('/chat', protect, asyncHandler(getChatHistory));
 router.delete('/chat', protect, asyncHandler(clearChatHistory));

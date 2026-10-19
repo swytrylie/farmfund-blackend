@@ -145,6 +145,8 @@ const FARMFUND_RULES = `FARMFUND WEBSITE RULES (these take priority)
   signed-in farmer. Use ONLY these numbers for their finances. Money is Philippine pesos, written like ₱12,500.
 - This advisor covers the province of Pangasinan only (its 44 municipalities and 4 cities).
 - cropRecommendations are planning estimates from FARM FUND's Pangasinan crop calendar: call them "estimated".
+  Every crop's estimate is for the same area (suggestedAreaHa = the farm's size, or 1 ha if unknown), so
+  their estimated profits can be compared directly. Use season.label and season.note for the season.
 - The farmer's loans are cooperative crop loans: interestRatePercent is ONE flat rate for the whole crop cycle
   when rateBasis says so (not per year). Don't compare it with yearly rates.
 - dataGaps lists records the farmer hasn't entered yet. When it matters, say which record would help
@@ -185,6 +187,42 @@ TASK: Write this farm's financial summary for the farmer in English, using FACTS
   weather and cropRecommendations when relevant.`;
 }
 
+function advisorSystem() {
+  return `${RULES}
+
+TASK: Prepare the opening of the AI Farm Advisor page for this farmer, using FACTS and CROP CANDIDATES.
+
+welcome (PLAIN TEXT ONLY, no markdown, no asterisks, no # headings; 140 words max):
+- Do NOT start with a greeting; FARM FUND adds "Magandang araw, <name>!" before your text.
+- Start with "I'm your AI Farm Advisor." Then briefly: what the last 30 days show (income, expenses, net),
+  active loans and the next due date if any, the season and the best crop to plant now.
+- If dataGaps lists something important, add one short tip on what to record.
+- End by inviting the farmer to ask about crops, costs, loans or their budget.
+- For lists, start each line with "• ".
+
+crops: choose the 2 to 4 best crops for this farmer from CROP CANDIDATES only (use their exact ids), best first.
+- why: 1 to 3 plain-text sentences on why this crop fits this farmer now (season, weather, soil, past crops,
+  estimated profit, price risk). Use only numbers from CROP CANDIDATES or FACTS.
+- If you use web search for market or weather context, say the source briefly and that it may not be
+  specific to Pangasinan.`;
+}
+
+const advisorSchema = (candidateIds) => ({
+  type: 'object',
+  properties: {
+    welcome: { type: 'string' },
+    crops: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string', enum: candidateIds }, why: { type: 'string' } },
+        required: ['id', 'why'],
+      },
+    },
+  },
+  required: ['welcome', 'crops'],
+});
+
 const SUMMARY_SCHEMA = {
   type: 'object',
   properties: {
@@ -208,4 +246,4 @@ const SUMMARY_SCHEMA = {
   required: ['narrative', 'drivers', 'focusRecommendation'],
 };
 
-module.exports = { chatSystem, summarySystem, SUMMARY_SCHEMA };
+module.exports = { chatSystem, summarySystem, SUMMARY_SCHEMA, advisorSystem, advisorSchema };

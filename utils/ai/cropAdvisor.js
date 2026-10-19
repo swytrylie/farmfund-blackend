@@ -50,6 +50,7 @@ const REASON_TEXT = {
   ROTATION_AFTER_RICE: () => 'It is a good crop to follow rice: it adds nitrogen to the soil and breaks pest cycles.',
   FAMILIAR: () => 'You have grown this before.',
   GOVT_SUPPORT: () => 'It has government support (RCEF seeds and machinery, crop insurance) and a steady market.',
+  LABOR_HEAVY: () => "It needs a lot of labor and care, so if you haven't grown it before, you may want to start with part of your land.",
 };
 const reasonText = (reasons) => reasons.map((r) => REASON_TEXT[r.code]?.(r)).filter(Boolean).join(' ');
 
@@ -97,9 +98,10 @@ function scoreCrop(crop, { today, lgu, farm, forecast, lastCrop, grownBefore }) 
   if (grownBefore) { score += 8; reasons.push({ code: 'FAMILIAR' }); }
   if (crop.govSupport) { score += 5; reasons.push({ code: 'GOVT_SUPPORT' }); }
 
-  let area = Number(farm.sizeHa) || 1;
-  if (crop.laborIntensity === 'high' && !grownBefore) area = Math.min(area, 0.5); // labor-heavy & new: start small
-  area = Math.round(area * 10) / 10;
+  // Every card uses the same area (the farmer's farm size, or 1 ha if it isn't recorded),
+  // so the estimated profits can be compared directly.
+  const area = Math.round((Number(farm.sizeHa) || 1) * 100) / 100;
+  if (crop.laborIntensity === 'high' && !grownBefore) reasons.push({ code: 'LABOR_HEAVY' });
 
   return {
     id: crop.id,
@@ -122,7 +124,8 @@ function scoreCrop(crop, { today, lgu, farm, forecast, lastCrop, grownBefore }) 
     priceVolatility: crop.priceVolatility,
     loanCrop: LOAN_CROP[crop.id] || null,
     reasons,
-    why: reasonText(reasons.slice(0, 4)),
+    // up to 3 main reasons, plus the labor caveat when it applies
+    why: reasonText([...reasons.filter((r) => r.code !== 'LABOR_HEAVY').slice(0, 3), ...reasons.filter((r) => r.code === 'LABOR_HEAVY')]),
   };
 }
 
