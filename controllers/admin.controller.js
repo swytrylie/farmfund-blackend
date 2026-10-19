@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Cooperative = require('../models/Cooperative');
 const CooperativeMember = require('../models/CooperativeMember');
+const Loan = require('../models/Loan');
 const ApiResponse = require('../utils/ApiResponse');
 
 // "Today", "this month" etc. are worked out in Philippine time (UTC+8, no
@@ -75,6 +76,20 @@ async function loadCooperativesWithOwners(filter, limit) {
     .filter(({ owner }) => owner && owner.isEmailVerified !== false);
 }
 
+// How many loans are running across the whole system. A loan in its 15-day
+// grace period is still an active loan, so it counts in both numbers.
+// Totals only: no borrower, cooperative or amount is read or sent.
+async function countRunningLoans() {
+  const rows = await Loan.aggregate([
+    { $match: { status: { $in: ['active', 'grace_period'] } } },
+    { $group: { _id: '$status', n: { $sum: 1 } } },
+  ]);
+  const by = new Map(rows.map((r) => [r._id, r.n]));
+  const active = by.get('active') || 0;
+  const grace = by.get('grace_period') || 0;
+  return { activeLoans: active + grace, graceLoans: grace };
+}
+
 // GET /api/admin/dashboard  — ADMIN ONLY (route-level authorize)
 async function getDashboard(req, res) {
   const now = new Date();
@@ -93,6 +108,7 @@ async function getDashboard(req, res) {
     recentUsers,
     pendingPairs,
     recentCoopPairs,
+    running,
   ] = await Promise.all([
     User.countDocuments(REAL_USER),
     User.countDocuments({ ...REAL_USER, createdAt: { $gte: weekAgo } }),
@@ -103,6 +119,7 @@ async function getDashboard(req, res) {
     User.find(REAL_USER).sort({ createdAt: -1 }).limit(8).select('firstName lastName createdAt').lean(),
     loadCooperativesWithOwners({ status: 'pending' }),
     loadCooperativesWithOwners({}, 20),
+    countRunningLoans(),
   ]);
 
   const recentActivity = [
@@ -143,6 +160,8 @@ async function getDashboard(req, res) {
       pendingCooperatives: pendingPairs.length,
       activeToday,
       suspendedAccounts,
+      activeLoans: running.activeLoans,
+      graceLoans: running.graceLoans,
     },
     accountGrowth: bucketGrowth(growthRows.map((r) => r.createdAt), now, 6),
     recentActivity,
@@ -150,4 +169,4 @@ async function getDashboard(req, res) {
   }).send(res);
 }
 
-module.exports = { getDashboard, startOfTodayManila, lastMonths, bucketGrowth, REAL_USER };
+module.exports = { getDashboard, countRunningLoans, startOfTodayManila, lastMonths, bucketGrowth, REAL_USER };
