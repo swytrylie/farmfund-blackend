@@ -7,7 +7,7 @@ const { buildFacts } = require('../utils/ai/farmFacts');
 const { generate, generateStream } = require('../utils/ai/gemini');
 const { chatSystem, summarySystem, SUMMARY_SCHEMA, advisorSystem, advisorSchema } = require('../utils/ai/prompts');
 const {
-  SUGGESTED_PROMPTS, GAP_TIPS, DRIVER_TITLES, welcomeMessage, summaryMetrics, driverTags, driverStatus, fallbackSummary, fallbackChat,
+  BASIC_ANSWER_NOTE, SUGGESTED_PROMPTS, GAP_TIPS, DRIVER_TITLES, welcomeMessage, summaryMetrics, driverTags, driverStatus, fallbackSummary, fallbackChat,
 } = require('../utils/ai/advisorText');
 
 const CACHE_HOURS = Number(process.env.AI_CACHE_HOURS || 6);
@@ -204,7 +204,7 @@ async function chat(req, res) {
     log('chat fallback:', err.cause?.message || err.message);
     if (!reply) {
       source = 'rules';
-      reply = fallbackChat(facts, question);
+      reply = BASIC_ANSWER_NOTE + fallbackChat(facts, question);
       res.write(reply);
     }
   }

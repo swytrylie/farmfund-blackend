@@ -301,3 +301,22 @@ test('every crop card uses the same area (the farm size), so profits compare fai
   const twoHa = recommendCrops({ today: october, lgu: findLgu('Bayambang'), farm: { sizeHa: 2.5 }, pastCrops: [], limit: 20 });
   assert.deepEqual([...new Set(twoHa.map((r) => r.suggestedAreaHa))], [2.5]);
 });
+
+test('chat backup: answers weather questions from the forecast and says it is a basic answer', async () => {
+  // A real-looking 16-day forecast for this test only
+  const realFetch = global.fetch;
+  const days = Array.from({ length: 16 }, (_, i) => new Date(Date.now() + i * 864e5).toISOString().slice(0, 10));
+  const rain = [0, 2, 40, 55, 30, 0, 0, 1, 0, 0, 3, 0, 0, 0, 0, 0];
+  global.fetch = async (url, opts) => String(url).includes('open-meteo')
+    ? { ok: true, json: async () => ({ daily: { time: days, precipitation_sum: rain, temperature_2m_max: rain.map(() => 31), temperature_2m_min: rain.map(() => 23), wind_gusts_10m_max: rain.map(() => 35), precipitation_probability_max: rain.map(() => 60) } }) }
+    : realFetch(url, opts);
+  try {
+    const res = await post('/chat', { message: 'Uulan ba ngayong linggo?' });
+    const text = await res.text();
+    assert.match(text, /^\(Basic answer: the AI is busy right now/);
+    assert.match(text, /Weather forecast for Bayambang, Pangasinan/);
+    assert.match(text, /Next 7 days: about \d+ mm of rain/);
+  } finally {
+    global.fetch = realFetch;
+  }
+});

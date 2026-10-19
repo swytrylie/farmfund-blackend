@@ -170,10 +170,37 @@ function fallbackSummary(facts) {
 }
 
 // ---------------------------------------------------------------- rule-based chat answers
+// Shown above every rule-based chat answer so farmers know the AI didn't write it.
+const BASIC_ANSWER_NOTE = '(Basic answer: the AI is busy right now, so this was made from your records only. Please try again in a few minutes.)\n\n';
+
+function fallbackWeather(facts) {
+  const w = facts.weather;
+  const where = facts.location ? `${facts.location.municipality}, Pangasinan` : 'your farm';
+  if (!facts.location) return 'I need your farm location to check the weather. Choose your municipality in Farm Profile.';
+  if (!w) return `The weather forecast for ${where} is not available right now. Please try again later.`;
+  const lines = [
+    `Weather forecast for ${where} (${facts.season.label}):`,
+    `• Next 7 days: about ${w.rainNext7DaysMm} mm of rain.`,
+    `• Next 16 days: about ${w.rainNext16DaysMm} mm of rain, with ${w.dryDays} mostly dry days.`,
+    `• Heaviest 3 days of rain: about ${w.maxRain3DaysMm} mm. Strongest wind gusts: about ${w.maxWindGustKph} km/h.`,
+    `• Daytime temperature: around ${w.avgMaxTempC}°C.`,
+  ];
+  if (w.risks.includes('typhoon_or_heavy_rain')) lines.push('', 'Warning: very heavy rain or strong wind is possible. Clear drainage canals, secure stored harvest, and wait before planting vegetables.');
+  else if (w.risks.includes('heavy_rain')) lines.push('', 'Heavy rain is expected on some days. Prepare drainage and wait for it to pass before planting vegetables.');
+  if (w.risks.includes('dry_spell')) lines.push('', 'A dry spell is coming. Plan irrigation, and favor crops that need little water.');
+  if (w.risks.includes('extreme_heat')) lines.push('', 'Very hot days are expected. Water early in the morning or late in the afternoon.');
+  if (!w.risks.length) lines.push('', 'No heavy rain, typhoon or dry spell is expected, so it is a good time for field work.');
+  lines.push('', 'Forecast from Open-Meteo.com. For typhoon warnings, also follow PAGASA.');
+  return lines.join('\n');
+}
+
 function fallbackChat(facts, question) {
   const q = question.toLowerCase();
   const m = facts.money;
   const l = facts.loans;
+  if (/weather|forecast|rain|typhoon|storm|wind|hot|temperature|dry spell|panahon|ulan|uulan|bagyo|hangin|init|tag-?init|panawen|tudo|bagio|panaon|uran|bagyo/.test(q)) {
+    return fallbackWeather(facts);
+  }
   if (/plant|crop|tanim|itanim|season/.test(q)) {
     if (!facts.cropRecommendations.length) return 'I could not find a crop that is in season right now. Check again next month.';
     return [`For the ${facts.season.label.toLowerCase()}${facts.location ? ` in ${facts.location.municipality}` : ''}, these crops fit best:`, '',
@@ -220,4 +247,4 @@ function fallbackChat(facts, question) {
     '', 'Ask me about crops to plant, costs, loans or your budget for more detail.'].filter(Boolean).join('\n');
 }
 
-module.exports = { SUGGESTED_PROMPTS, GAP_TIPS, DRIVER_TITLES, welcomeMessage, summaryMetrics, driverTags, driverStatus, fallbackSummary, fallbackChat, peso };
+module.exports = { BASIC_ANSWER_NOTE, fallbackWeather, SUGGESTED_PROMPTS, GAP_TIPS, DRIVER_TITLES, welcomeMessage, summaryMetrics, driverTags, driverStatus, fallbackSummary, fallbackChat, peso };
