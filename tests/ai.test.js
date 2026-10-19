@@ -320,3 +320,22 @@ test('chat backup: answers weather questions from the forecast and says it is a 
     global.fetch = realFetch;
   }
 });
+
+test('when Google Search is out of quota (429), the chat answers with Gemini without Search', async () => {
+  const calls = [];
+  setClientForTests({
+    models: {
+      generateContentStream: async function* (req) {
+        calls.push(req);
+        if (req.config.tools) throw Object.assign(new Error('search quota'), { status: 429 });
+        yield { text: 'Answer without search.' };
+      },
+    },
+  });
+  const res = await post('/chat', { message: 'What is the weather this week?' });
+  assert.equal(await res.text(), 'Answer without search.');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].config.tools, [{ googleSearch: {} }]);
+  assert.equal(calls[1].config.tools, undefined);
+  assert.equal(calls[1].model, 'gemini-3.1-flash-lite', 'same model, just without Search');
+});

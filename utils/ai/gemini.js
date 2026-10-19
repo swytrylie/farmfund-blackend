@@ -36,6 +36,8 @@ function thinkingFor(model) {
   return ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'].includes(level) ? { thinkingConfig: { thinkingLevel: level } } : {};
 }
 
+const SEARCH_RETRY = [400, 429];
+
 const retryable = (err) =>
   [404, 429, 500, 503, 504].includes(err?.status) || err?.name === 'TimeoutError' || err?.name === 'AbortError' || err instanceof SyntaxError;
 
@@ -71,8 +73,9 @@ async function generate({ system, prompt, history = [], jsonSchema, temperature 
       try {
         res = await call(model, webSearch);
       } catch (err) {
-        // Some models refuse Google Search together with a JSON answer: ask again without search.
-        if (!(webSearch && err?.status === 400)) throw err;
+        // Google Search has its own (small) free quota (429), and some models refuse Search together
+        // with a JSON answer (400). Either way, ask again without Search: the farmer's records are enough.
+        if (!(webSearch && SEARCH_RETRY.includes(err?.status))) throw err;
         res = await call(model, false);
       }
       const text = res.text || '';
@@ -91,28 +94,34 @@ async function* generateStream({ system, prompt, history = [], temperature = 0.5
   if (!ai) throw new AiUnavailableError(new Error('GEMINI_API_KEY is not set'));
   let lastErr;
   for (const model of modelChain()) {
-    let started = false;
-    try {
-      const abortSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
-      const stream = await ai.models.generateContentStream({
-        model,
-        contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: system,
-          temperature,
-          abortSignal,
-          ...thinkingFor(model),
-          ...(webSearch ? { tools: [{ googleSearch: {} }] } : {}),
-        },
-      });
-      for await (const chunk of stream) {
-        if (chunk.text) { started = true; yield chunk.text; }
+    // First with Google Search (if on); if Search is out of quota or refused, the same model again without it.
+    for (const withSearch of webSearch ? [true, false] : [false]) {
+      let started = false;
+      try {
+        const abortSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+        const stream = await ai.models.generateContentStream({
+          model,
+          contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            systemInstruction: system,
+            temperature,
+            abortSignal,
+            ...thinkingFor(model),
+            ...(withSearch ? { tools: [{ googleSearch: {} }] } : {}),
+          },
+        });
+        for await (const chunk of stream) {
+          if (chunk.text) { started = true; yield chunk.text; }
+        }
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (started) throw new AiUnavailableError(err); // can't restart halfway through an answer
+        if (withSearch && SEARCH_RETRY.includes(err?.status)) continue; // try again without Search
+        break;
       }
-      return;
-    } catch (err) {
-      lastErr = err;
-      if (started || !retryable(err)) break; // can't switch models halfway through an answer
     }
+    if (!retryable(lastErr)) break;
   }
   throw new AiUnavailableError(lastErr);
 }
